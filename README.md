@@ -15,13 +15,13 @@ Pull requests are of course welcome.
     - out
     - tee
   - file types:
-    - tls://<addr>
-    - file://<path> #read/write to filesystem
-    - http://<addr>/<path> #read/write to http endpoint
-    - https://<addr>/<path> #read/write to https endpoint
-    - tcp://<addr> #read/write to tcp connection
-    - socket://<path> #read/write to socket file
-    - fifo://<path> #read/write to fifo file on filesystem
+    - tls://\<addr>
+    - file://\<path> `read/write to filesystem`
+    - http://\<addr>/\<path> `read/write to http endpoint`
+    - https://\<addr>/\<path> `read/write to https endpoint`
+    - tcp://\<addr> `read/write to tcp connection`
+    - socket://\<path> `read/write to socket file`
+    - fifo://\<path> `read/write to fifo file on filesystem`
   - commands
     - aes
     - nacl
