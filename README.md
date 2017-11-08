@@ -44,19 +44,19 @@ Commands:
 
 Options:
   -chomp
-        Get rid of the last \n when not in pipe
-  -decoder string
-        Specify the decoder codec of input (default "binary")
-  -encoder string
-        Specify the encoder codec of output (default "binary")
+    	Get rid of the last \n when not in pipe
+  -decoders string
+    	Set a list of codecs separated by ',' to decode input that will be process in the order given (default "binary")
+  -encoders string
+    	Set a list of codecs separated by ',' to encode output that will be process in the order given (default "binary")
   -from-byte-in string
-        Skip the first x bytes of stdin. Use 0X/0x for base 16, 0b/0B for base 2, 0 for base8 otherwise base 10
+    	Skip the first x bytes of stdin. Use 0X/0x for base 16, 0b/0B for base 2, 0 for base8 otherwise base 10
   -from-byte-out string
-        Skip the first x bytes of stdout. Use 0X/0x for base 16, 0b/0B for base 2, 0 for base8 otherwise base 10
+    	Skip the first x bytes of stdout. Use 0X/0x for base 16, 0b/0B for base 2, 0 for base8 otherwise base 10
   -to-byte-in string
-        Stop at byte x of stdin.  Use 0X/0x for base 16, 0b/0B for base 2, 0 for base8 otherwise base10. If you add a '+' at the begining, the value will be added to -from-byte-in (default "+0")
+    	Stop at byte x of stdin.  Use 0X/0x for base 16, 0b/0B for base 2, 0 for base8 otherwise base 10. If you add a '+' at the begining, the value will be added to -from-byte-in
   -to-byte-out string
-        Stop at byte x of stdout. Use 0X/0x for base 16, 0b/0B for base 2, 0 for base8 otherwise base10. If you add a '+' at the begining, the value will be added to -from-byte-out (default "+0")
+    	Stop at byte x of stdout. Use 0X/0x for base 16, 0b/0B for base 2, 0 for base8 otherwise base 10. If you add a '+' at the begining, the value will be added to -from-byte-out
 
 Codecs:
   hex
@@ -74,11 +74,11 @@ Get the last 32 byte of a sha512 hash function from a hex string to base64 witho
 
 Transform stdin to binary string
 
-`echo -n toto | cryptocli dd -encoder binary_string`
+`echo -n toto | cryptocli dd -encoders binary_string`
 
 Gzip stdin then base64 it
 
-`echo -n toto | cryptocli dd -encoder gzip  | cryptocli dd -encoder base64`
+`echo -n toto | cryptocli dd -encoders gzip,base64`
 
 Get rid of the first 2 bytes
 

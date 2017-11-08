@@ -7,12 +7,13 @@ import (
   "os"
   "math/big"
   "github.com/pkg/errors"
+  "strings"
 )
 
 type GlobalFlags struct {
   Chomp bool
-  Encoder string
-  Decoder string
+  Encoders string
+  Decoders string
   FromByteIn string
   FromByteOut string
   ToByteIn string
@@ -26,24 +27,34 @@ func ParseFlags(set *flag.FlagSet, globalFlags *GlobalFlags) (*GlobalOptions) {
 
   set.Parse(os.Args[2:])
 
-  if globalFlags.Decoder != "" {
-    decoder, err := codec.Parse(globalFlags.Decoder)
+  if globalFlags.Decoders != "" {
+    codecs, err := codec.ParseAll(strings.Split(globalFlags.Decoders, ","))
     if err != nil {
       fmt.Println(err)
       os.Exit(2)
     }
 
-    globalOptions.Decoder = decoder.Decoder()
+    decoders := make([]codec.CodecDecoder, len(codecs))
+    for i, decoder := range codecs {
+      decoders[i] = decoder.Decoder()
+    }
+
+    globalOptions.Decoders = decoders
   }
 
-  if globalFlags.Encoder != "" {
-    encoder, err := codec.Parse(globalFlags.Encoder)
+  if globalFlags.Encoders != "" {
+    codecs, err := codec.ParseAll(strings.Split(globalFlags.Encoders, ","))
     if err != nil {
       fmt.Println(err)
       os.Exit(2)
     }
 
-    globalOptions.Encoder = encoder.Encoder()
+    encoders := make([]codec.CodecEncoder, len(codecs))
+    for i, encoder := range codecs {
+      encoders[i] = encoder.Encoder()
+    }
+
+    globalOptions.Encoders = encoders
   }
 
   var ok bool
@@ -87,8 +98,8 @@ func SetupFlags(set *flag.FlagSet) (*GlobalFlags) {
   globalFlags := &GlobalFlags{}
 
   set.BoolVar(&globalFlags.Chomp, "chomp", false, "Get rid of the last \\n when not in pipe")
-  set.StringVar(&globalFlags.Decoder, "decoder", "binary", "Specify the decoder codec of input")
-  set.StringVar(&globalFlags.Encoder, "encoder", "binary", "Specify the encoder codec of output")
+  set.StringVar(&globalFlags.Decoders, "decoders", "binary", "Set a list of codecs separated by ',' to decode input that will be process in the order given")
+  set.StringVar(&globalFlags.Encoders, "encoders", "binary", "Set a list of codecs separated by ',' to encode output that will be process in the order given")
   set.StringVar(&globalFlags.FromByteIn, "from-byte-in", "0", "Skip the first x bytes of stdin. Use 0X/0x for base 16, 0b/0B for base 2, 0 for base8 otherwise base 10")
   set.StringVar(&globalFlags.ToByteIn, "to-byte-in", "0", "Stop at byte x of stdin.  Use 0X/0x for base 16, 0b/0B for base 2, 0 for base8 otherwise base 10. If you add a '+' at the begining, the value will be added to -from-byte-in")
   set.StringVar(&globalFlags.FromByteOut, "from-byte-out", "0", "Skip the first x bytes of stdout. Use 0X/0x for base 16, 0b/0B for base 2, 0 for base8 otherwise base 10")

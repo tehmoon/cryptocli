@@ -7,6 +7,7 @@ import (
 
 var (
   ErrCodecUnknown = errors.New("Unknown codec")
+  ErrEmptyParseCodecs = errors.New("Some codecs were parsed but all were empty string")
   CodecList = []string{
     "hex",
     "binary",
@@ -15,6 +16,29 @@ var (
     "gzip",
   }
 )
+
+func ParseAll(codecs []string) ([]Codec, error) {
+  cds := make([]Codec, 0)
+
+  for _, codec := range codecs {
+    if codec == "" {
+      continue
+    }
+
+    c, err := Parse(codec)
+    if err != nil {
+      return nil, err
+    }
+
+    cds = append(cds, c)
+  }
+
+  if len(cds) == 0 {
+    return nil, ErrEmptyParseCodecs
+  }
+
+  return cds, nil
+}
 
 func Parse(codec string) (Codec, error) {
   switch codec {

@@ -5,8 +5,8 @@ import (
 )
 
 type GlobalOptions struct {
-  Decoder codec.CodecDecoder
-  Encoder codec.CodecEncoder
+  Decoders []codec.CodecDecoder
+  Encoders []codec.CodecEncoder
   FromByteIn uint64
   ToByteIn uint64
   FromByteOut uint64
@@ -20,8 +20,8 @@ func newGlobalOptions() (*GlobalOptions) {
   globalOptions := &GlobalOptions{}
 
   c, _ := codec.Parse("binary")
-  globalOptions.Decoder = c.Decoder()
-  globalOptions.Encoder = c.Encoder()
+  globalOptions.Decoders = []codec.CodecDecoder{c.Decoder(),}
+  globalOptions.Encoders = []codec.CodecEncoder{c.Encoder(),}
 
   return globalOptions
 }
