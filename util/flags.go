@@ -90,9 +90,9 @@ func SetupFlags(set *flag.FlagSet) (*GlobalFlags) {
   set.StringVar(&globalFlags.Decoder, "decoder", "binary", "Specify the decoder codec of input")
   set.StringVar(&globalFlags.Encoder, "encoder", "binary", "Specify the encoder codec of output")
   set.StringVar(&globalFlags.FromByteIn, "from-byte-in", "0", "Skip the first x bytes of stdin. Use 0X/0x for base 16, 0b/0B for base 2, 0 for base8 otherwise base 10")
-  set.StringVar(&globalFlags.ToByteIn, "to-byte-in", "+0", "Stop at byte x of stdin.  Use 0X/0x for base 16, 0b/0B for base 2, 0 for base8 otherwise base 10. If you add a '+' at the begining, the value will be added to -from-byte-in")
+  set.StringVar(&globalFlags.ToByteIn, "to-byte-in", "0", "Stop at byte x of stdin.  Use 0X/0x for base 16, 0b/0B for base 2, 0 for base8 otherwise base 10. If you add a '+' at the begining, the value will be added to -from-byte-in")
   set.StringVar(&globalFlags.FromByteOut, "from-byte-out", "0", "Skip the first x bytes of stdout. Use 0X/0x for base 16, 0b/0B for base 2, 0 for base8 otherwise base 10")
-  set.StringVar(&globalFlags.ToByteOut, "to-byte-out", "+0", "Stop at byte x of stdout. Use 0X/0x for base 16, 0b/0B for base 2, 0 for base8 otherwise base 10. If you add a '+' at the begining, the value will be added to -from-byte-out")
+  set.StringVar(&globalFlags.ToByteOut, "to-byte-out", "0", "Stop at byte x of stdout. Use 0X/0x for base 16, 0b/0B for base 2, 0 for base8 otherwise base 10. If you add a '+' at the begining, the value will be added to -from-byte-out")
 
   return globalFlags
 }
