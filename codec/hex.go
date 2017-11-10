@@ -78,6 +78,7 @@ func (enc *HexEncoder) Read(p []byte) (int, error) {
 }
 
 func (enc *HexEncoder) Write(data []byte) (int, error) {
+  //TODO: use hex package
   fmt.Fprintf(enc.pipeWriter, "%x", data)
 
   return len(data), nil

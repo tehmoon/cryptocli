@@ -30,6 +30,7 @@ Pull requests are of course welcome.
   - codecs
     - base58
     - decimal
+    - uint
     - octal
 
 ## Usage
@@ -60,7 +61,7 @@ Codecs:
   binary
 	Do nothing in input and nothing in output
   binary_string
-	Take ascii string of 1 and 0 in input and decode it to binary, do the oposite for output
+	Take ascii string of 1 and 0 in input and decode it to binary. A byte is always 8 characters number. Does the opposite for output
   base64
 	base64 decode input and base64 encode output
   gzip
