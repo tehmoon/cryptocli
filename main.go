@@ -180,16 +180,19 @@ func main() {
     }(globalOptions.Decoders[len(globalOptions.Decoders) - 1])
   }
 
-  stdinFileInfo, _ := os.Stdin.Stat()
-  if (stdinFileInfo.Mode() & os.ModeCharDevice == 0) {
-    _, err := io.Copy(globalOptions.Decoders[0], os.Stdin)
-    if err != nil {
-      fmt.Printf("Error in decoding stdin: %v\n", err)
-      os.Exit(1)
+  go func() {
+    stdinFileInfo, _ := os.Stdin.Stat()
+    if (stdinFileInfo.Mode() & os.ModeCharDevice == 0) {
+      _, err := io.Copy(globalOptions.Decoders[0], os.Stdin)
+      if err != nil {
+        fmt.Printf("Error in decoding stdin: %v\n", err)
+        os.Exit(1)
+      }
+      globalOptions.Decoders[0].Close()
     }
-    globalOptions.Decoders[0].Close()
-    <- done
-  }
+  }()
+
+  <- done
 }
 
 var CommandList = []Command{
