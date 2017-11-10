@@ -31,16 +31,13 @@ Pull requests are of course welcome.
     - base58
     - decimal
     - octal
-    - hexdump
 
 ## Usage
 
 `cryptocli <command> [<options>] [<arguments>]`
 
 ```
-Commands:
-  dd:  Copy input to output like the dd tool.
-  dgst:  Hash the content of stdin
+Usage: ./cryptocli [<Options>] 
 
 Options:
   -chomp
@@ -57,13 +54,19 @@ Options:
     	Stop at byte x of stdin.  Use 0X/0x for base 16, 0b/0B for base 2, 0 for base8 otherwise base 10. If you add a '+' at the begining, the value will be added to -from-byte-in
   -to-byte-out string
     	Stop at byte x of stdout. Use 0X/0x for base 16, 0b/0B for base 2, 0 for base8 otherwise base 10. If you add a '+' at the begining, the value will be added to -from-byte-out
-
 Codecs:
   hex
+	hex encode output and hex decode input
   binary
+	Do nothing in input and nothing in output
   binary_string
+	Take ascii string of 1 and 0 in input and decode it to binary, do the oposite for output
   base64
+	base64 decode input and base64 encode output
   gzip
+	gzip compress output and gzip decompress input
+  hexdump
+	Encode output to hexdump -c. Doesn't support decoding
 ```
 
 ## Examples

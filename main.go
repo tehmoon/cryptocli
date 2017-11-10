@@ -22,7 +22,7 @@ func main() {
     if len(codec.CodecList) > 0 {
       fmt.Fprintln(os.Stderr, "Codecs:")
       for _, c := range codec.CodecList {
-        fmt.Fprintf(os.Stderr, "  %s\n", c)
+        fmt.Fprintf(os.Stderr, "  %s\n\t%s\n", c.Name(), c.Description())
       }
     }
     if usage.Other != "" {

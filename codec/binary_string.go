@@ -5,7 +5,23 @@ import (
   "github.com/pkg/errors"
 )
 
-type BinaryString struct {}
+var DefaultBinaryString = &BinaryString{
+  name: "binary_string",
+  description: "Take ascii string of 1 and 0 in input and decode it to binary, do the oposite for output",
+}
+
+type BinaryString struct {
+  name string
+  description string
+}
+
+func (codec BinaryString) Name() (string) {
+  return codec.name
+}
+
+func (codec BinaryString) Description() (string) {
+  return codec.description
+}
 
 type BinaryStringDecoder struct {
   pipeReader *io.PipeReader
@@ -15,10 +31,6 @@ type BinaryStringDecoder struct {
 type BinaryStringEncoder struct {
   pipeReader *io.PipeReader
   pipeWriter *io.PipeWriter
-}
-
-func NewCodecBinaryString() (Codec) {
-  return &BinaryString{}
 }
 
 func (codec BinaryString) Decoder() (CodecDecoder) {

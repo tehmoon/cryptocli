@@ -6,7 +6,23 @@ import (
   "encoding/hex"
 )
 
-type Hex struct{}
+var DefaultHex = &Hex{
+  name: "hex",
+  description: "hex encode output and hex decode input",
+}
+
+type Hex struct {
+  name string
+  description string
+}
+
+func (codec Hex) Name() (string) {
+  return codec.name
+}
+
+func (codec Hex) Description() (string) {
+  return codec.description
+}
 
 type HexDecoder struct {
   pipeReader *io.PipeReader
@@ -16,10 +32,6 @@ type HexDecoder struct {
 type HexEncoder struct {
   pipeReader *io.PipeReader
   pipeWriter *io.PipeWriter
-}
-
-func NewCodecHex() (Codec) {
-  return &Hex{}
 }
 
 func (codec Hex) Decoder() (CodecDecoder) {

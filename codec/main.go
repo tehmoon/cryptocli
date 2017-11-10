@@ -8,12 +8,13 @@ import (
 var (
   ErrCodecUnknown = errors.New("Unknown codec")
   ErrEmptyParseCodecs = errors.New("Some codecs were parsed but all were empty string")
-  CodecList = []string{
-    "hex",
-    "binary",
-    "binary_string",
-    "base64",
-    "gzip",
+  CodecList = []Codec{
+    DefaultHex,
+    DefaultBinary,
+    DefaultBinaryString,
+    DefaultBase64,
+    DefaultGzip,
+    DefaultHexdump,
   }
 )
 
@@ -43,15 +44,17 @@ func ParseAll(codecs []string) ([]Codec, error) {
 func Parse(codec string) (Codec, error) {
   switch codec {
     case "hex":
-      return NewCodecHex(), nil
+      return DefaultHex, nil
     case "binary":
-      return NewCodecBinary(), nil
+      return DefaultBinary, nil
     case "binary_string":
-      return NewCodecBinaryString(), nil
+      return DefaultBinaryString, nil
     case "base64":
-      return NewCodecBase64(), nil
+      return DefaultBase64, nil
     case "gzip":
-      return NewCodecGzip(), nil
+      return DefaultGzip, nil
+    case "hexdump":
+      return DefaultHexdump, nil
     default:
       return nil, ErrCodecUnknown
   }
@@ -60,6 +63,8 @@ func Parse(codec string) (Codec, error) {
 type Codec interface {
   Decoder() (CodecDecoder)
   Encoder() (CodecEncoder)
+  Name() (string)
+  Description() (string)
 }
 
 type CodecEncoder interface {
