@@ -77,7 +77,11 @@ func main() {
         os.Exit(1)
       }
 
-      encoder.Close()
+      err = encoder.Close()
+      if err != nil {
+        fmt.Fprintln(os.Stderr, err)
+        os.Exit(1)
+      }
     }(encoder, encoderReader)
 
     encoderReader = encoder
@@ -91,7 +95,11 @@ func main() {
         os.Exit(1)
       }
 
-      byteCounterOut.Close()
+      err = byteCounterOut.Close()
+      if err != nil {
+        fmt.Fprintln(os.Stderr, err)
+        os.Exit(1)
+      }
     }()
 
     go func(encoderReader codec.CodecEncoder) {
@@ -101,17 +109,25 @@ func main() {
         os.Exit(1)
       }
 
-      encoderReader.Close()
+      err = encoderReader.Close()
+      if err != nil {
+        fmt.Fprintln(os.Stderr, err)
+        os.Exit(1)
+      }
     }(globalOptions.Encoders[0])
   } else {
     go func(encoderReader codec.CodecEncoder) {
        _, err = io.Copy(encoderReader, command)
       if err != nil {
-        fmt.Printf("Err reading in byteCounterOut: %v\n", err)
+        fmt.Printf("Err reading in encoderReader: %v\n", err)
         os.Exit(1)
       }
 
-      encoderReader.Close()
+      err = encoderReader.Close()
+      if err != nil {
+        fmt.Fprintln(os.Stderr, err)
+        os.Exit(1)
+      }
     }(globalOptions.Encoders[0])
   }
 
@@ -132,7 +148,11 @@ func main() {
         os.Exit(1)
       }
 
-      decoder.Close()
+      err = decoder.Close()
+      if err != nil {
+        fmt.Fprintln(os.Stderr, err)
+        os.Exit(1)
+      }
     }(decoder, decoderReader)
 
     decoderReader = decoder
@@ -151,7 +171,11 @@ func main() {
         os.Exit(1)
       }
 
-      byteCounterIn.Close()
+      err = byteCounterIn.Close()
+      if err != nil {
+        fmt.Fprintln(os.Stderr, err)
+        os.Exit(1)
+      }
     }()
 
     go func() {
@@ -161,7 +185,11 @@ func main() {
         os.Exit(1)
       }
 
-      command.Close()
+      err = command.Close()
+      if err != nil {
+        fmt.Fprintln(os.Stderr, err)
+        os.Exit(1)
+      }
     }()
   } else {
     go func(decoder codec.CodecDecoder) {
@@ -176,7 +204,11 @@ func main() {
         os.Exit(1)
       }
 
-      command.Close()
+      err = command.Close()
+      if err != nil {
+        fmt.Fprintln(os.Stderr, err)
+        os.Exit(1)
+      }
     }(globalOptions.Decoders[len(globalOptions.Decoders) - 1])
   }
 
@@ -188,7 +220,11 @@ func main() {
         fmt.Printf("Error in decoding stdin: %v\n", err)
         os.Exit(1)
       }
-      globalOptions.Decoders[0].Close()
+      err = globalOptions.Decoders[0].Close()
+      if err != nil {
+        fmt.Fprintln(os.Stderr, err)
+        os.Exit(1)
+      }
     }
   }()
 
