@@ -5,7 +5,23 @@ import (
   "github.com/pkg/errors"
 )
 
-type BinaryString struct {}
+var DefaultBinaryString = &BinaryString{
+  name: "binary_string",
+  description: "Take ascii string of 1 and 0 in input and decode it to binary. A byte is always 8 characters number. Does the opposite for output",
+}
+
+type BinaryString struct {
+  name string
+  description string
+}
+
+func (codec BinaryString) Name() (string) {
+  return codec.name
+}
+
+func (codec BinaryString) Description() (string) {
+  return codec.description
+}
 
 type BinaryStringDecoder struct {
   pipeReader *io.PipeReader
@@ -15,10 +31,6 @@ type BinaryStringDecoder struct {
 type BinaryStringEncoder struct {
   pipeReader *io.PipeReader
   pipeWriter *io.PipeWriter
-}
-
-func NewCodecBinaryString() (Codec) {
-  return &BinaryString{}
 }
 
 func (codec BinaryString) Decoder() (CodecDecoder) {
@@ -42,8 +54,8 @@ func (dec *BinaryStringDecoder) Read(p []byte) (int, error) {
 }
 
 var (
-  ErrBinaryStringBadLen = errors.New("Binary string length must be a multiple of 8")
-  ErrBinaryStringBadChar = errors.New("Binary string must be composed of '0' and/or '1' only")
+  ErrBinaryStringBadLen = errors.New("Binary string length must be a multiple of 8\n")
+  ErrBinaryStringBadChar = errors.New("Binary string must be composed of '0' and/or '1' only\n")
 )
 
 func (dec *BinaryStringDecoder) Write(data []byte) (int, error) {

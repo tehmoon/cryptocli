@@ -1,4 +1,4 @@
-package util
+package flags
 
 import (
   "../codec"
@@ -36,7 +36,13 @@ func ParseFlags(set *flag.FlagSet, globalFlags *GlobalFlags) (*GlobalOptions) {
 
     decoders := make([]codec.CodecDecoder, len(codecs))
     for i, decoder := range codecs {
-      decoders[i] = decoder.Decoder()
+      dec := decoder.Decoder()
+      if dec == nil {
+        fmt.Printf("Codec %s doesn't support decoding\n", decoder.Name())
+        os.Exit(2)
+      }
+
+      decoders[i] = dec
     }
 
     globalOptions.Decoders = decoders
@@ -51,7 +57,13 @@ func ParseFlags(set *flag.FlagSet, globalFlags *GlobalFlags) (*GlobalOptions) {
 
     encoders := make([]codec.CodecEncoder, len(codecs))
     for i, encoder := range codecs {
-      encoders[i] = encoder.Encoder()
+      enc := encoder.Encoder()
+      if enc == nil {
+        fmt.Printf("Codec %s doesn't support encoding\n", encoder.Name())
+        os.Exit(2)
+      }
+
+      encoders[i] = enc
     }
 
     globalOptions.Encoders = encoders

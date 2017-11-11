@@ -4,7 +4,7 @@ import (
   "os"
   "./commands/dd"
   "./commands/dgst"
-  "./util"
+  "./flags"
   "./codec"
   "fmt"
   "io"
@@ -13,7 +13,7 @@ import (
 
 func main() {
   command := parseCommand()
-  globalFlags := util.SetupFlags(flag.CommandLine)
+  globalFlags := flags.SetupFlags(flag.CommandLine)
   command.SetupFlags(flag.CommandLine)
   flag.CommandLine.Usage = func () {
     usage := command.Usage()
@@ -22,14 +22,14 @@ func main() {
     if len(codec.CodecList) > 0 {
       fmt.Fprintln(os.Stderr, "Codecs:")
       for _, c := range codec.CodecList {
-        fmt.Fprintf(os.Stderr, "  %s\n", c)
+        fmt.Fprintf(os.Stderr, "  %s\n\t%s\n", c.Name(), c.Description())
       }
     }
     if usage.Other != "" {
       fmt.Fprintf(os.Stderr, "\n%s\n", usage.Other)
     }
   }
-  globalOptions := util.ParseFlags(flag.CommandLine, globalFlags)
+  globalOptions := flags.ParseFlags(flag.CommandLine, globalFlags)
   err := command.ParseFlags()
   if err != nil {
     flag.CommandLine.Usage()
@@ -77,7 +77,11 @@ func main() {
         os.Exit(1)
       }
 
-      encoder.Close()
+      err = encoder.Close()
+      if err != nil {
+        fmt.Fprintln(os.Stderr, err)
+        os.Exit(1)
+      }
     }(encoder, encoderReader)
 
     encoderReader = encoder
@@ -91,7 +95,11 @@ func main() {
         os.Exit(1)
       }
 
-      byteCounterOut.Close()
+      err = byteCounterOut.Close()
+      if err != nil {
+        fmt.Fprintln(os.Stderr, err)
+        os.Exit(1)
+      }
     }()
 
     go func(encoderReader codec.CodecEncoder) {
@@ -101,17 +109,25 @@ func main() {
         os.Exit(1)
       }
 
-      encoderReader.Close()
+      err = encoderReader.Close()
+      if err != nil {
+        fmt.Fprintln(os.Stderr, err)
+        os.Exit(1)
+      }
     }(globalOptions.Encoders[0])
   } else {
     go func(encoderReader codec.CodecEncoder) {
        _, err = io.Copy(encoderReader, command)
       if err != nil {
-        fmt.Printf("Err reading in byteCounterOut: %v\n", err)
+        fmt.Printf("Err reading in encoderReader: %v\n", err)
         os.Exit(1)
       }
 
-      encoderReader.Close()
+      err = encoderReader.Close()
+      if err != nil {
+        fmt.Fprintln(os.Stderr, err)
+        os.Exit(1)
+      }
     }(globalOptions.Encoders[0])
   }
 
@@ -132,7 +148,11 @@ func main() {
         os.Exit(1)
       }
 
-      decoder.Close()
+      err = decoder.Close()
+      if err != nil {
+        fmt.Fprintln(os.Stderr, err)
+        os.Exit(1)
+      }
     }(decoder, decoderReader)
 
     decoderReader = decoder
@@ -151,7 +171,11 @@ func main() {
         os.Exit(1)
       }
 
-      byteCounterIn.Close()
+      err = byteCounterIn.Close()
+      if err != nil {
+        fmt.Fprintln(os.Stderr, err)
+        os.Exit(1)
+      }
     }()
 
     go func() {
@@ -161,7 +185,11 @@ func main() {
         os.Exit(1)
       }
 
-      command.Close()
+      err = command.Close()
+      if err != nil {
+        fmt.Fprintln(os.Stderr, err)
+        os.Exit(1)
+      }
     }()
   } else {
     go func(decoder codec.CodecDecoder) {
@@ -176,20 +204,31 @@ func main() {
         os.Exit(1)
       }
 
-      command.Close()
+      err = command.Close()
+      if err != nil {
+        fmt.Fprintln(os.Stderr, err)
+        os.Exit(1)
+      }
     }(globalOptions.Decoders[len(globalOptions.Decoders) - 1])
   }
 
-  stdinFileInfo, _ := os.Stdin.Stat()
-  if (stdinFileInfo.Mode() & os.ModeCharDevice == 0) {
-    _, err := io.Copy(globalOptions.Decoders[0], os.Stdin)
-    if err != nil {
-      fmt.Printf("Error in decoding stdin: %v\n", err)
-      os.Exit(1)
+  go func() {
+    stdinFileInfo, _ := os.Stdin.Stat()
+    if (stdinFileInfo.Mode() & os.ModeCharDevice == 0) {
+      _, err := io.Copy(globalOptions.Decoders[0], os.Stdin)
+      if err != nil {
+        fmt.Printf("Error in decoding stdin: %v\n", err)
+        os.Exit(1)
+      }
+      err = globalOptions.Decoders[0].Close()
+      if err != nil {
+        fmt.Fprintln(os.Stderr, err)
+        os.Exit(1)
+      }
     }
-    globalOptions.Decoders[0].Close()
-    <- done
-  }
+  }()
+
+  <- done
 }
 
 var CommandList = []Command{

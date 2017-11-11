@@ -4,7 +4,23 @@ import (
   "io"
 )
 
-type Binary struct {}
+var DefaultBinary = &Binary{
+  name: "binary",
+  description: "Do nothing in input and nothing in output",
+}
+
+type Binary struct {
+  name string
+  description string
+}
+
+func (codec Binary) Name() (string) {
+  return codec.name
+}
+
+func (codec Binary) Description() (string) {
+  return codec.description
+}
 
 type BinaryDecoder struct {
   pipeReader *io.PipeReader
@@ -14,10 +30,6 @@ type BinaryDecoder struct {
 type BinaryEncoder struct {
   pipeReader *io.PipeReader
   pipeWriter *io.PipeWriter
-}
-
-func NewCodecBinary() (Codec) {
-  return &Binary{}
 }
 
 func (codec Binary) Decoder() (CodecDecoder) {

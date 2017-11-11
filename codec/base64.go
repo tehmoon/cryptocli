@@ -6,7 +6,23 @@ import (
   "encoding/base64"
 )
 
-type Base64 struct{}
+var DefaultBase64 = &Base64{
+  name: "base64",
+  description: "base64 decode input and base64 encode output",
+}
+
+type Base64 struct{
+  name string
+  description string
+}
+
+func (codec Base64) Name() (string) {
+  return codec.name
+}
+
+func (codec Base64) Description() (string) {
+  return codec.description
+}
 
 type Base64Decoder struct {
   pipeReader *io.PipeReader
@@ -18,10 +34,6 @@ type Base64Encoder struct {
   pipeReader *io.PipeReader
   pipeWriter *io.PipeWriter
   encoder io.WriteCloser
-}
-
-func NewCodecBase64() (Codec) {
-  return &Base64{}
 }
 
 func (codec Base64) Decoder() (CodecDecoder) {

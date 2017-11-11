@@ -1,4 +1,4 @@
-package util
+package flags
 
 type Usage struct {
   CommandLine string

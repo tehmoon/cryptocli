@@ -5,7 +5,23 @@ import (
   "io"
 )
 
-type Gzip struct{}
+var DefaultGzip = &Gzip{
+  name: "gzip",
+  description: "gzip compress output and gzip decompress input",
+}
+
+type Gzip struct{
+  name string
+  description string
+}
+
+func (codec Gzip) Name() (string) {
+  return codec.name
+}
+
+func (codec Gzip) Description() (string) {
+  return codec.description
+}
 
 type GzipDecoder struct {
   pipeReader *io.PipeReader
@@ -17,10 +33,6 @@ type GzipEncoder struct {
   pipeReader *io.PipeReader
   pipeWriter *io.PipeWriter
   gzipWriter *gzip.Writer
-}
-
-func NewCodecGzip() (Codec) {
-  return &Gzip{}
 }
 
 func (codec Gzip) Decoder() (CodecDecoder) {
