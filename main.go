@@ -4,7 +4,7 @@ import (
   "os"
   "./commands/dd"
   "./commands/dgst"
-  "./util"
+  "./flags"
   "./codec"
   "fmt"
   "io"
@@ -13,7 +13,7 @@ import (
 
 func main() {
   command := parseCommand()
-  globalFlags := util.SetupFlags(flag.CommandLine)
+  globalFlags := flags.SetupFlags(flag.CommandLine)
   command.SetupFlags(flag.CommandLine)
   flag.CommandLine.Usage = func () {
     usage := command.Usage()
@@ -29,7 +29,7 @@ func main() {
       fmt.Fprintf(os.Stderr, "\n%s\n", usage.Other)
     }
   }
-  globalOptions := util.ParseFlags(flag.CommandLine, globalFlags)
+  globalOptions := flags.ParseFlags(flag.CommandLine, globalFlags)
   err := command.ParseFlags()
   if err != nil {
     flag.CommandLine.Usage()

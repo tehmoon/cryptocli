@@ -6,7 +6,7 @@ import (
   "crypto/sha256"
   "crypto/sha512"
   "hash"
-  "../../util"
+  "../../flags"
 )
 
 type Dgst struct {
@@ -16,7 +16,7 @@ type Dgst struct {
   pipeReader *io.PipeReader
   pipeWriter *io.PipeWriter
   flagSet *flag.FlagSet
-  usage *util.Usage
+  usage *flags.Usage
 }
 
 var Command *Dgst
@@ -25,7 +25,7 @@ func init() {
   command := &Dgst{
     name: "dgst",
     description: "Hash the content of stdin",
-    usage: &util.Usage{
+    usage: &flags.Usage{
       CommandLine: "<hash algorithm>",
       Other: "Hash Algorithms:\n  sha256\n  sha512",
     },
@@ -35,7 +35,7 @@ func init() {
   Command = command
 }
 
-func (command Dgst) Usage() (*util.Usage) {
+func (command Dgst) Usage() (*flags.Usage) {
   return command.usage
 }
 
@@ -83,7 +83,7 @@ func (command *Dgst) ParseFlags() (error) {
     case "":
       command.hash = sha512.New()
     default:
-      return util.ErrBadFlag
+      return flags.ErrBadFlag
   }
 
   return nil

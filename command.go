@@ -2,7 +2,7 @@ package main
 
 import (
   "io"
-  "./util"
+  "./flags"
   "flag"
 )
 
@@ -11,7 +11,7 @@ type Command interface {
   Description() (string)
   SetupFlags(*flag.FlagSet)
   ParseFlags() (error)
-  Usage() (*util.Usage)
+  Usage() (*flags.Usage)
 }
 
 type CommandPipe interface {

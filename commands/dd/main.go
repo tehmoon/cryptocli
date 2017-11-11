@@ -3,7 +3,7 @@ package dd
 import (
   "io"
   "flag"
-  "../../util"
+  "../../flags"
 )
 
 type Dd struct {
@@ -11,7 +11,7 @@ type Dd struct {
   description string
   pipeReader *io.PipeReader
   pipeWriter *io.PipeWriter
-  usage *util.Usage
+  usage *flags.Usage
 }
 
 var Command *Dd
@@ -20,7 +20,7 @@ func init() {
   command := &Dd{
     name: "dd",
     description: "Copy input to output like the dd tool.",
-    usage: &util.Usage{
+    usage: &flags.Usage{
       CommandLine: "",
       Other: "",
     },
@@ -30,7 +30,7 @@ func init() {
   Command = command
 }
 
-func (command Dd) Usage() (*util.Usage) {
+func (command Dd) Usage() (*flags.Usage) {
   return command.usage
 }
 
