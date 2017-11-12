@@ -43,12 +43,12 @@ func main() {
   go func() {
     err := globalOptions.Encoders[len(globalOptions.Encoders) - 1].Init()
     if err != nil {
-      fmt.Printf("Err in init encoder: %v\n", err)
+      fmt.Fprintf(os.Stderr, "Err in init encoder: %v", err)
       return
     }
     _, err = io.Copy(os.Stdout, globalOptions.Encoders[len(globalOptions.Encoders) - 1])
     if err != nil {
-      fmt.Printf("Err in reading encoder: %v\n", err)
+      fmt.Fprintf(os.Stderr, "Err in reading encoder: %v", err)
       return
     }
 
@@ -67,13 +67,13 @@ func main() {
     go func(encoder codec.CodecEncoder, encoderReader codec.CodecEncoder) {
       err := encoder.Init()
       if err != nil {
-        fmt.Printf("Err in init encoder: %v\n", err)
+        fmt.Fprintf(os.Stderr, "Err in init encoder: %v", err)
         os.Exit(1)
       }
 
       _, err = io.Copy(encoder, encoderReader)
       if err != nil {
-        fmt.Printf("Err in reading reader: %v\n", err)
+        fmt.Fprintf(os.Stderr, "Err in reading reader: %v", err)
         os.Exit(1)
       }
 
@@ -91,7 +91,7 @@ func main() {
     go func() {
        _, err := io.Copy(byteCounterOut, command)
       if err != nil {
-        fmt.Printf("Err reading in command: %v\n", err)
+        fmt.Fprintf(os.Stderr, "Err reading in command: %v", err)
         os.Exit(1)
       }
 
@@ -105,7 +105,7 @@ func main() {
     go func(encoderReader codec.CodecEncoder) {
        _, err = io.Copy(encoderReader, byteCounterOut)
       if err != nil {
-        fmt.Printf("Err reading in byteCounterOut: %v\n", err)
+        fmt.Fprintf(os.Stderr, "Err reading in byteCounterOut: %v", err)
         os.Exit(1)
       }
 
@@ -119,7 +119,7 @@ func main() {
     go func(encoderReader codec.CodecEncoder) {
        _, err = io.Copy(encoderReader, command)
       if err != nil {
-        fmt.Printf("Err reading in encoderReader: %v\n", err)
+        fmt.Fprintf(os.Stderr, "Err reading in encoderReader: %v", err)
         os.Exit(1)
       }
 
@@ -138,13 +138,13 @@ func main() {
     go func(decoder codec.CodecDecoder, decoderReader codec.CodecDecoder) {
       err := decoderReader.Init()
       if err != nil {
-        fmt.Printf("Err in init decoder: %v\n", err)
+        fmt.Fprintf(os.Stderr, "Err in init decoder: %v", err)
         os.Exit(1)
       }
 
       _, err = io.Copy(decoder, decoderReader)
       if err != nil {
-        fmt.Printf("Err in reading decoder decoderReader: %v\n", err)
+        fmt.Fprintf(os.Stderr, "Err in reading decoder decoderReader: %v", err)
         os.Exit(1)
       }
 
@@ -162,12 +162,12 @@ func main() {
     go func() {
       err := decoderReader.Init()
       if err != nil {
-        fmt.Printf("Err in init decoder: %v\n", err)
+        fmt.Fprintf(os.Stderr, "Err in init decoder: %v", err)
         os.Exit(1)
       }
        _, err = io.Copy(byteCounterIn, decoderReader)
       if err != nil {
-        fmt.Printf("Err reading in decoder: %v\n", err)
+        fmt.Fprintf(os.Stderr, "Err reading in decoder: %v", err)
         os.Exit(1)
       }
 
@@ -181,7 +181,7 @@ func main() {
     go func() {
        _, err := io.Copy(command, byteCounterIn)
       if err != nil {
-        fmt.Printf("Err reading in byteCounterIn: %v\n", err)
+        fmt.Fprintf(os.Stderr, "Err reading in byteCounterIn: %v", err)
         os.Exit(1)
       }
 
@@ -195,12 +195,12 @@ func main() {
     go func(decoder codec.CodecDecoder) {
       err := decoder.Init()
       if err != nil {
-        fmt.Printf("Err in init decoder: %v\n", err)
+        fmt.Fprintf(os.Stderr, "Err in init decoder: %v", err)
         os.Exit(1)
       }
       _, err = io.Copy(command, decoder)
       if err != nil {
-        fmt.Printf("Err in reading decoder decoderReader: %v\n", err)
+        fmt.Fprintf(os.Stderr, "Err in reading decoder decoderReader: %v", err)
         os.Exit(1)
       }
 
@@ -217,7 +217,7 @@ func main() {
     if (stdinFileInfo.Mode() & os.ModeCharDevice == 0) {
       _, err := io.Copy(globalOptions.Decoders[0], os.Stdin)
       if err != nil {
-        fmt.Printf("Error in decoding stdin: %v\n", err)
+        fmt.Fprintf(os.Stderr, "Error in decoding stdin: %v", err)
         os.Exit(1)
       }
       err = globalOptions.Decoders[0].Close()
