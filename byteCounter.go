@@ -7,6 +7,7 @@ import (
 type ByteCounter struct {
   startAt uint64
   stopAt uint64
+  diff uint64
   read uint64
   wrote uint64
   pipeReader *io.PipeReader
@@ -14,29 +15,29 @@ type ByteCounter struct {
 }
 
 func (byteCounter *ByteCounter) Read(p []byte) (int, error) {
-  if byteCounter.stopAt != 0 {
-    if byteCounter.read > byteCounter.stopAt {
-      return 0, io.EOF
-    }
+  if byteCounter.diff <= uint64(0) {
+    return 0, io.EOF
+  }
 
-    if byteCounter.read + uint64(len(p)) > byteCounter.stopAt {
-      toRead := byteCounter.stopAt - byteCounter.read
-      read, err := byteCounter.pipeReader.Read(p[:toRead])
-      if err != nil {
-        if err != io.EOF {
-          return read, err
-        }
-      }
-
-      return read, io.EOF
-    }
-
+  if uint64(len(p)) <= byteCounter.diff {
     read, err := byteCounter.pipeReader.Read(p)
-    byteCounter.read += uint64(read)
+    if err != nil {
+      return read, err
+    }
+
+    byteCounter.diff -= uint64(read)
+
+    return read, nil
+  }
+
+  read, err := byteCounter.pipeReader.Read(p[:byteCounter.diff])
+  if err != nil {
     return read, err
   }
 
-  return byteCounter.pipeReader.Read(p)
+  byteCounter.diff -= uint64(read)
+
+  return read, nil
 }
 
 func (byteCounter *ByteCounter) Write(data []byte) (int, error) {
@@ -64,6 +65,7 @@ func newByteCounter(startAt, stopAt uint64) (io.ReadWriteCloser) {
   byteCounter := &ByteCounter{
     startAt: startAt,
     stopAt: stopAt,
+    diff: stopAt - startAt,
     read: 0,
     wrote: 0,
   }
