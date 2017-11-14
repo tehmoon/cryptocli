@@ -20,7 +20,7 @@ type GlobalFlags struct {
   ToByteOut string
 }
 
-var ErrBadFlag = errors.New("Bad flags")
+var ErrBadFlag = errors.New("Bad flags\n")
 
 func ParseFlags(set *flag.FlagSet, globalFlags *GlobalFlags) (*GlobalOptions) {
   globalOptions := newGlobalOptions()
@@ -30,7 +30,7 @@ func ParseFlags(set *flag.FlagSet, globalFlags *GlobalFlags) (*GlobalOptions) {
   if globalFlags.Decoders != "" {
     codecs, err := codec.ParseAll(strings.Split(globalFlags.Decoders, ","))
     if err != nil {
-      fmt.Println(err)
+      fmt.Fprintf(os.Stderr, "%v", err)
       os.Exit(2)
     }
 
@@ -38,7 +38,7 @@ func ParseFlags(set *flag.FlagSet, globalFlags *GlobalFlags) (*GlobalOptions) {
     for i, decoder := range codecs {
       dec := decoder.Decoder()
       if dec == nil {
-        fmt.Printf("Codec %s doesn't support decoding\n", decoder.Name())
+        fmt.Fprintf(os.Stderr, "Codec %s doesn't support decoding\n", decoder.Name())
         os.Exit(2)
       }
 
@@ -51,7 +51,7 @@ func ParseFlags(set *flag.FlagSet, globalFlags *GlobalFlags) (*GlobalOptions) {
   if globalFlags.Encoders != "" {
     codecs, err := codec.ParseAll(strings.Split(globalFlags.Encoders, ","))
     if err != nil {
-      fmt.Println(err)
+      fmt.Fprintf(os.Stderr, "%v", err)
       os.Exit(2)
     }
 
@@ -59,7 +59,7 @@ func ParseFlags(set *flag.FlagSet, globalFlags *GlobalFlags) (*GlobalOptions) {
     for i, encoder := range codecs {
       enc := encoder.Encoder()
       if enc == nil {
-        fmt.Printf("Codec %s doesn't support encoding\n", encoder.Name())
+        fmt.Fprintf(os.Stderr, "Codec %s doesn't support encoding\n", encoder.Name())
         os.Exit(2)
       }
 
@@ -73,25 +73,25 @@ func ParseFlags(set *flag.FlagSet, globalFlags *GlobalFlags) (*GlobalOptions) {
 
   globalOptions.FromByteIn, ok = parseBytePositionArgument(globalFlags.FromByteIn)
   if !ok {
-    fmt.Println("Bad -from-byte-in number")
+    fmt.Fprintln(os.Stderr, "Bad -from-byte-in number")
     os.Exit(2)
   }
 
   globalOptions.ToByteIn, ok = parseBytePositionArgument(globalFlags.ToByteIn)
   if !ok {
-    fmt.Println("Bad -to-byte-in number")
+    fmt.Fprintln(os.Stderr, "Bad -to-byte-in number")
     os.Exit(2)
   }
 
   globalOptions.FromByteOut, ok = parseBytePositionArgument(globalFlags.FromByteOut)
   if !ok {
-    fmt.Println("Bad -from-byte-out number")
+    fmt.Fprintln(os.Stderr, "Bad -from-byte-out number")
     os.Exit(2)
   }
 
   globalOptions.ToByteOut, ok = parseBytePositionArgument(globalFlags.ToByteOut)
   if !ok {
-    fmt.Println("Bad -to-byte-out number")
+    fmt.Fprintln(os.Stderr, "Bad -to-byte-out number")
     os.Exit(2)
   }
 

@@ -6,8 +6,8 @@ import (
 )
 
 var (
-  ErrCodecUnknown = errors.New("Unknown codec")
-  ErrEmptyParseCodecs = errors.New("Some codecs were parsed but all were empty string")
+  ErrCodecUnknown = errors.New("Unknown codec\n")
+  ErrEmptyParseCodecs = errors.New("Some codecs were parsed but all were empty string\n")
   CodecList = []Codec{
     DefaultHex,
     DefaultBinary,
