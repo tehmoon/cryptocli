@@ -214,17 +214,21 @@ func main() {
 
   go func() {
     stdinFileInfo, _ := os.Stdin.Stat()
-    if (stdinFileInfo.Mode() & os.ModeCharDevice == 0) {
-      _, err := io.Copy(globalOptions.Decoders[0], os.Stdin)
-      if err != nil {
-        fmt.Fprintf(os.Stderr, "Error in decoding stdin: %v", err)
-        os.Exit(1)
-      }
-      err = globalOptions.Decoders[0].Close()
-      if err != nil {
-        fmt.Fprintln(os.Stderr, err)
-        os.Exit(1)
-      }
+    if (stdinFileInfo.Mode() & os.ModeCharDevice != 0) {
+      globalFlags.Chomp = true
+      globalOptions.Decoders[0].Close()
+      return
+    }
+
+    _, err := io.Copy(globalOptions.Decoders[0], os.Stdin)
+    if err != nil {
+      fmt.Fprintf(os.Stderr, "Error in decoding stdin: %v", err)
+      os.Exit(1)
+    }
+    err = globalOptions.Decoders[0].Close()
+    if err != nil {
+      fmt.Fprintln(os.Stderr, err)
+      os.Exit(1)
     }
   }()
 
