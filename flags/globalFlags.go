@@ -21,6 +21,7 @@ type GlobalFlags struct {
   ToByteOut string
   In string
   Out string
+  Tee string
 }
 
 var ErrBadFlag = errors.New("Bad flags\n")
@@ -31,6 +32,14 @@ func ParseFlags(set *flag.FlagSet, globalFlags *GlobalFlags) (*GlobalOptions) {
   set.Parse(os.Args[2:])
 
   var err error
+
+  if globalFlags.Tee != "" {
+    globalOptions.Tee, err = inout.ParseOutput(globalFlags.Tee)
+    if err != nil {
+      fmt.Fprintf(os.Stderr, "%v", err)
+      os.Exit(2)
+    }
+  }
 
   globalOptions.Input, err = inout.ParseInput(globalFlags.In)
   if err != nil {
@@ -135,6 +144,7 @@ func SetupFlags(set *flag.FlagSet) (*GlobalFlags) {
   set.StringVar(&globalFlags.ToByteOut, "to-byte-out", "0", "Stop at byte x of stdout. Use 0X/0x for base 16, 0b/0B for base 2, 0 for base8 otherwise base 10. If you add a '+' at the begining, the value will be added to -from-byte-out")
   set.StringVar(&globalFlags.In, "in", "", "Input <fileType> method")
   set.StringVar(&globalFlags.Out, "out", "", "Output <fileType> method")
+  set.StringVar(&globalFlags.Tee, "tee", "", "Copy the output of -output to <fileType>")
 
   return globalFlags
 }

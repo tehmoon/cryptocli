@@ -10,8 +10,6 @@ Pull requests are of course welcome.
 
   - download x509 certificates from https
   - cleanup the code
-  - specify file types for:
-    - tee
   - file types:
     - tls://\<addr>
     - http://\<addr>/\<path> `read/write to http endpoint`
@@ -53,6 +51,8 @@ Options:
     	Input <fileType> method
   -out string
     	Output <fileType> method
+  -tee string
+    	Copy the output of -output to <fileType>
   -to-byte-in string
     	Stop at byte x of stdin.  Use 0X/0x for base 16, 0b/0B for base 2, 0 for base8 otherwise base 10. If you add a '+' at the begining, the value will be added to -from-byte-in
   -to-byte-out string

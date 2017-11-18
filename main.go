@@ -65,6 +65,16 @@ func main() {
     var lastReader io.Reader
     lastReader = globalOptions.Encoders[len(globalOptions.Encoders) - 1]
 
+    if globalOptions.Tee != nil {
+      err = globalOptions.Tee.Init(globalFlags.Chomp)
+      if err != nil {
+        fmt.Fprintf(os.Stderr, "Err initializing output: %v", err)
+        os.Exit(1)
+      }
+
+      lastReader = io.TeeReader(lastReader, globalOptions.Tee)
+    }
+
     _, err = io.Copy(globalOptions.Output, lastReader)
     if err != nil {
       fmt.Fprintf(os.Stderr, "Err in reading encoder: %v", err)

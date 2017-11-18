@@ -17,6 +17,7 @@ type GlobalOptions struct {
   Bs int
   Ibs int
   Obs int
+  Tee inout.Output
 }
 
 func newGlobalOptions() (*GlobalOptions) {
