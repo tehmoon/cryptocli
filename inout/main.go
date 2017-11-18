@@ -9,6 +9,7 @@ import (
 var (
   InoutList []IO = []IO{
     DefaultFile,
+    DefaultPipe,
   }
 )
 
@@ -64,6 +65,8 @@ func parse(inout string) (*url.URL, IO, error) {
       return uri, DefaultFile, nil
     case "":
       return uri, DefaultFile, nil
+    case "pipe":
+      return uri, DefaultPipe, nil
     default:
       return nil, nil, errors.Errorf("Error unknown type %s\n", uri.Scheme)
   }

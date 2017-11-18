@@ -17,7 +17,6 @@ Pull requests are of course welcome.
     - tcp://\<addr> `read/write to tcp connection`
     - socket://\<path> `read/write to socket file`
     - fifo://\<path> `read/write to fifo file on filesystem`
-    - pipe:\<command\> `pipe stdin/stdout/stderr to <command>`
   - commands
     - aes
     - nacl
@@ -75,6 +74,8 @@ Codecs:
 FileTypes:
  file://
 	Read from a file or write to a file. Default when no <filetype> is specified.
+ pipe:
+	Run a command in a sub shell. Either write to the command's stdin or read from its stdout.
 ```
 
 ## Examples
@@ -102,3 +103,7 @@ Output the base64 hash of stdin to file
 Decode base64 from file to stdout in hex
 
 `cryptocli dd -decoders base64 -encoders hex -in ./toto.txt`
+
+Gzip input, write it to file and write its sha512 checksum in hex format to another file
+
+`echo toto | cryptocli dd -encoders gzip -tee pipe:"cryptocli dgst -encoders hex -out ./checksum.txt" -out ./file.gz`
