@@ -11,17 +11,15 @@ Pull requests are of course welcome.
   - download x509 certificates from https
   - cleanup the code
   - specify file types for:
-    - in
-    - out
     - tee
   - file types:
     - tls://\<addr>
-    - file://\<path> `read/write to filesystem`
     - http://\<addr>/\<path> `read/write to http endpoint`
     - https://\<addr>/\<path> `read/write to https endpoint`
     - tcp://\<addr> `read/write to tcp connection`
     - socket://\<path> `read/write to socket file`
     - fifo://\<path> `read/write to fifo file on filesystem`
+    - pipe:\<command\> `pipe stdin/stdout/stderr to <command>`
   - commands
     - aes
     - nacl
@@ -51,10 +49,15 @@ Options:
     	Skip the first x bytes of stdin. Use 0X/0x for base 16, 0b/0B for base 2, 0 for base8 otherwise base 10
   -from-byte-out string
     	Skip the first x bytes of stdout. Use 0X/0x for base 16, 0b/0B for base 2, 0 for base8 otherwise base 10
+  -in string
+    	Input <fileType> method
+  -out string
+    	Output <fileType> method
   -to-byte-in string
     	Stop at byte x of stdin.  Use 0X/0x for base 16, 0b/0B for base 2, 0 for base8 otherwise base 10. If you add a '+' at the begining, the value will be added to -from-byte-in
   -to-byte-out string
     	Stop at byte x of stdout. Use 0X/0x for base 16, 0b/0B for base 2, 0 for base8 otherwise base 10. If you add a '+' at the begining, the value will be added to -from-byte-out
+
 Codecs:
   hex
 	hex encode output and hex decode input

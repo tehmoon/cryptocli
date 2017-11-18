@@ -8,6 +8,7 @@ import (
   "math/big"
   "github.com/pkg/errors"
   "strings"
+  "../inout"
 )
 
 type GlobalFlags struct {
@@ -18,6 +19,8 @@ type GlobalFlags struct {
   FromByteOut string
   ToByteIn string
   ToByteOut string
+  In string
+  Out string
 }
 
 var ErrBadFlag = errors.New("Bad flags\n")
@@ -26,6 +29,20 @@ func ParseFlags(set *flag.FlagSet, globalFlags *GlobalFlags) (*GlobalOptions) {
   globalOptions := newGlobalOptions()
 
   set.Parse(os.Args[2:])
+
+  var err error
+
+  globalOptions.Input, err = inout.ParseInput(globalFlags.In)
+  if err != nil {
+    fmt.Fprintf(os.Stderr, "%v", err)
+    os.Exit(2)
+  }
+
+  globalOptions.Output, err = inout.ParseOutput(globalFlags.Out)
+  if err != nil {
+    fmt.Fprintf(os.Stderr, "%v", err)
+    os.Exit(2)
+  }
 
   if globalFlags.Decoders != "" {
     codecs, err := codec.ParseAll(strings.Split(globalFlags.Decoders, ","))
@@ -116,6 +133,8 @@ func SetupFlags(set *flag.FlagSet) (*GlobalFlags) {
   set.StringVar(&globalFlags.ToByteIn, "to-byte-in", "0", "Stop at byte x of stdin.  Use 0X/0x for base 16, 0b/0B for base 2, 0 for base8 otherwise base 10. If you add a '+' at the begining, the value will be added to -from-byte-in")
   set.StringVar(&globalFlags.FromByteOut, "from-byte-out", "0", "Skip the first x bytes of stdout. Use 0X/0x for base 16, 0b/0B for base 2, 0 for base8 otherwise base 10")
   set.StringVar(&globalFlags.ToByteOut, "to-byte-out", "0", "Stop at byte x of stdout. Use 0X/0x for base 16, 0b/0B for base 2, 0 for base8 otherwise base 10. If you add a '+' at the begining, the value will be added to -from-byte-out")
+  set.StringVar(&globalFlags.In, "in", "", "Input <fileType> method")
+  set.StringVar(&globalFlags.Out, "out", "", "Output <fileType> method")
 
   return globalFlags
 }
