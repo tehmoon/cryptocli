@@ -8,6 +8,7 @@ import (
   "math/big"
   "github.com/pkg/errors"
   "strings"
+  "../inout"
 )
 
 type GlobalFlags struct {
@@ -18,19 +19,44 @@ type GlobalFlags struct {
   FromByteOut string
   ToByteIn string
   ToByteOut string
+  In string
+  Out string
+  Tee string
 }
 
-var ErrBadFlag = errors.New("Bad flags")
+var ErrBadFlag = errors.New("Bad flags\n")
 
 func ParseFlags(set *flag.FlagSet, globalFlags *GlobalFlags) (*GlobalOptions) {
   globalOptions := newGlobalOptions()
 
   set.Parse(os.Args[2:])
 
+  var err error
+
+  if globalFlags.Tee != "" {
+    globalOptions.Tee, err = inout.ParseOutput(globalFlags.Tee)
+    if err != nil {
+      fmt.Fprintf(os.Stderr, "%v", err)
+      os.Exit(2)
+    }
+  }
+
+  globalOptions.Input, err = inout.ParseInput(globalFlags.In)
+  if err != nil {
+    fmt.Fprintf(os.Stderr, "%v", err)
+    os.Exit(2)
+  }
+
+  globalOptions.Output, err = inout.ParseOutput(globalFlags.Out)
+  if err != nil {
+    fmt.Fprintf(os.Stderr, "%v", err)
+    os.Exit(2)
+  }
+
   if globalFlags.Decoders != "" {
     codecs, err := codec.ParseAll(strings.Split(globalFlags.Decoders, ","))
     if err != nil {
-      fmt.Println(err)
+      fmt.Fprintf(os.Stderr, "%v", err)
       os.Exit(2)
     }
 
@@ -38,7 +64,7 @@ func ParseFlags(set *flag.FlagSet, globalFlags *GlobalFlags) (*GlobalOptions) {
     for i, decoder := range codecs {
       dec := decoder.Decoder()
       if dec == nil {
-        fmt.Printf("Codec %s doesn't support decoding\n", decoder.Name())
+        fmt.Fprintf(os.Stderr, "Codec %s doesn't support decoding\n", decoder.Name())
         os.Exit(2)
       }
 
@@ -51,7 +77,7 @@ func ParseFlags(set *flag.FlagSet, globalFlags *GlobalFlags) (*GlobalOptions) {
   if globalFlags.Encoders != "" {
     codecs, err := codec.ParseAll(strings.Split(globalFlags.Encoders, ","))
     if err != nil {
-      fmt.Println(err)
+      fmt.Fprintf(os.Stderr, "%v", err)
       os.Exit(2)
     }
 
@@ -59,7 +85,7 @@ func ParseFlags(set *flag.FlagSet, globalFlags *GlobalFlags) (*GlobalOptions) {
     for i, encoder := range codecs {
       enc := encoder.Encoder()
       if enc == nil {
-        fmt.Printf("Codec %s doesn't support encoding\n", encoder.Name())
+        fmt.Fprintf(os.Stderr, "Codec %s doesn't support encoding\n", encoder.Name())
         os.Exit(2)
       }
 
@@ -73,25 +99,25 @@ func ParseFlags(set *flag.FlagSet, globalFlags *GlobalFlags) (*GlobalOptions) {
 
   globalOptions.FromByteIn, ok = parseBytePositionArgument(globalFlags.FromByteIn)
   if !ok {
-    fmt.Println("Bad -from-byte-in number")
+    fmt.Fprintln(os.Stderr, "Bad -from-byte-in number")
     os.Exit(2)
   }
 
   globalOptions.ToByteIn, ok = parseBytePositionArgument(globalFlags.ToByteIn)
   if !ok {
-    fmt.Println("Bad -to-byte-in number")
+    fmt.Fprintln(os.Stderr, "Bad -to-byte-in number")
     os.Exit(2)
   }
 
   globalOptions.FromByteOut, ok = parseBytePositionArgument(globalFlags.FromByteOut)
   if !ok {
-    fmt.Println("Bad -from-byte-out number")
+    fmt.Fprintln(os.Stderr, "Bad -from-byte-out number")
     os.Exit(2)
   }
 
   globalOptions.ToByteOut, ok = parseBytePositionArgument(globalFlags.ToByteOut)
   if !ok {
-    fmt.Println("Bad -to-byte-out number")
+    fmt.Fprintln(os.Stderr, "Bad -to-byte-out number")
     os.Exit(2)
   }
 
@@ -116,6 +142,9 @@ func SetupFlags(set *flag.FlagSet) (*GlobalFlags) {
   set.StringVar(&globalFlags.ToByteIn, "to-byte-in", "0", "Stop at byte x of stdin.  Use 0X/0x for base 16, 0b/0B for base 2, 0 for base8 otherwise base 10. If you add a '+' at the begining, the value will be added to -from-byte-in")
   set.StringVar(&globalFlags.FromByteOut, "from-byte-out", "0", "Skip the first x bytes of stdout. Use 0X/0x for base 16, 0b/0B for base 2, 0 for base8 otherwise base 10")
   set.StringVar(&globalFlags.ToByteOut, "to-byte-out", "0", "Stop at byte x of stdout. Use 0X/0x for base 16, 0b/0B for base 2, 0 for base8 otherwise base 10. If you add a '+' at the begining, the value will be added to -from-byte-out")
+  set.StringVar(&globalFlags.In, "in", "", "Input <fileType> method")
+  set.StringVar(&globalFlags.Out, "out", "", "Output <fileType> method")
+  set.StringVar(&globalFlags.Tee, "tee", "", "Copy the output of -output to <fileType>")
 
   return globalFlags
 }

@@ -2,6 +2,7 @@ package flags
 
 import (
   "../codec"
+  "../inout"
 )
 
 type GlobalOptions struct {
@@ -11,9 +12,12 @@ type GlobalOptions struct {
   ToByteIn uint64
   FromByteOut uint64
   ToByteOut uint64
+  Input inout.Input
+  Output inout.Output
   Bs int
   Ibs int
   Obs int
+  Tee inout.Output
 }
 
 func newGlobalOptions() (*GlobalOptions) {

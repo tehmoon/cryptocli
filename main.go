@@ -6,6 +6,7 @@ import (
   "./commands/dgst"
   "./flags"
   "./codec"
+  "./inout"
   "fmt"
   "io"
   "flag"
@@ -20,11 +21,19 @@ func main() {
     fmt.Fprintf(os.Stderr, "Usage: %s [<Options>] %s\n\nOptions:\n", os.Args[0], usage.CommandLine)
     flag.PrintDefaults()
     if len(codec.CodecList) > 0 {
-      fmt.Fprintln(os.Stderr, "Codecs:")
+      fmt.Fprintln(os.Stderr, "\nCodecs:")
       for _, c := range codec.CodecList {
         fmt.Fprintf(os.Stderr, "  %s\n\t%s\n", c.Name(), c.Description())
       }
     }
+
+    if len(inout.InoutList) > 0 {
+      fmt.Fprintln(os.Stderr, "\nFileTypes:")
+      for _, i := range inout.InoutList {
+        fmt.Fprintf(os.Stderr, " %s\n\t%s\n", i.Name(), i.Description())
+      }
+    }
+
     if usage.Other != "" {
       fmt.Fprintf(os.Stderr, "\n%s\n", usage.Other)
     }
@@ -44,17 +53,38 @@ func main() {
     err := globalOptions.Encoders[len(globalOptions.Encoders) - 1].Init()
     if err != nil {
       fmt.Fprintf(os.Stderr, "Err in init encoder: %v", err)
-      return
-    }
-    _, err = io.Copy(os.Stdout, globalOptions.Encoders[len(globalOptions.Encoders) - 1])
-    if err != nil {
-      fmt.Fprintf(os.Stderr, "Err in reading encoder: %v", err)
-      return
+      os.Exit(1)
     }
 
-    stdoutFileInfo, _ := os.Stdout.Stat()
-    if (! (stdoutFileInfo.Mode() & os.ModeCharDevice == 0) && ! globalFlags.Chomp) {
-      fmt.Println()
+    err = globalOptions.Output.Init(globalFlags.Chomp)
+    if err != nil {
+      fmt.Fprintf(os.Stderr, "Err initializing output: %v", err)
+      os.Exit(1)
+    }
+
+    var lastReader io.Reader
+    lastReader = globalOptions.Encoders[len(globalOptions.Encoders) - 1]
+
+    if globalOptions.Tee != nil {
+      err = globalOptions.Tee.Init(globalFlags.Chomp)
+      if err != nil {
+        fmt.Fprintf(os.Stderr, "Err initializing output: %v", err)
+        os.Exit(1)
+      }
+
+      lastReader = io.TeeReader(lastReader, globalOptions.Tee)
+    }
+
+    _, err = io.Copy(globalOptions.Output, lastReader)
+    if err != nil {
+      fmt.Fprintf(os.Stderr, "Err in reading encoder: %v", err)
+      os.Exit(1)
+    }
+
+    err = globalOptions.Output.Close()
+    if err != nil {
+      fmt.Fprintf(os.Stderr, "Err closing output: %v", err)
+      os.Exit(1)
     }
 
     done <- struct{}{}
@@ -213,18 +243,28 @@ func main() {
   }
 
   go func() {
-    stdinFileInfo, _ := os.Stdin.Stat()
-    if (stdinFileInfo.Mode() & os.ModeCharDevice == 0) {
-      _, err := io.Copy(globalOptions.Decoders[0], os.Stdin)
-      if err != nil {
-        fmt.Fprintf(os.Stderr, "Error in decoding stdin: %v", err)
-        os.Exit(1)
+    err := globalOptions.Input.Init()
+    if err != nil {
+      if err == io.EOF {
+        globalFlags.Chomp = true
+        globalOptions.Decoders[0].Close()
+        return
       }
-      err = globalOptions.Decoders[0].Close()
-      if err != nil {
-        fmt.Fprintln(os.Stderr, err)
-        os.Exit(1)
-      }
+
+      fmt.Fprintf(os.Stderr, "Error initializing input: %v", err)
+      os.Exit(1)
+    }
+
+    _, err = io.Copy(globalOptions.Decoders[0], globalOptions.Input)
+    if err != nil {
+      fmt.Fprintf(os.Stderr, "Error in decoding input: %v", err)
+      os.Exit(1)
+    }
+
+    err = globalOptions.Decoders[0].Close()
+    if err != nil {
+      fmt.Fprintln(os.Stderr, err)
+      os.Exit(1)
     }
   }()
 

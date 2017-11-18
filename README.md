@@ -10,13 +10,8 @@ Pull requests are of course welcome.
 
   - download x509 certificates from https
   - cleanup the code
-  - specify file types for:
-    - in
-    - out
-    - tee
   - file types:
     - tls://\<addr>
-    - file://\<path> `read/write to filesystem`
     - http://\<addr>/\<path> `read/write to http endpoint`
     - https://\<addr>/\<path> `read/write to https endpoint`
     - tcp://\<addr> `read/write to tcp connection`
@@ -51,10 +46,17 @@ Options:
     	Skip the first x bytes of stdin. Use 0X/0x for base 16, 0b/0B for base 2, 0 for base8 otherwise base 10
   -from-byte-out string
     	Skip the first x bytes of stdout. Use 0X/0x for base 16, 0b/0B for base 2, 0 for base8 otherwise base 10
+  -in string
+    	Input <fileType> method
+  -out string
+    	Output <fileType> method
+  -tee string
+    	Copy the output of -output to <fileType>
   -to-byte-in string
     	Stop at byte x of stdin.  Use 0X/0x for base 16, 0b/0B for base 2, 0 for base8 otherwise base 10. If you add a '+' at the begining, the value will be added to -from-byte-in
   -to-byte-out string
     	Stop at byte x of stdout. Use 0X/0x for base 16, 0b/0B for base 2, 0 for base8 otherwise base 10. If you add a '+' at the begining, the value will be added to -from-byte-out
+
 Codecs:
   hex
 	hex encode output and hex decode input
@@ -68,6 +70,12 @@ Codecs:
 	gzip compress output and gzip decompress input
   hexdump
 	Encode output to hexdump -c. Doesn't support decoding
+
+FileTypes:
+ file://
+	Read from a file or write to a file. Default when no <filetype> is specified.
+ pipe:
+	Run a command in a sub shell. Either write to the command's stdin or read from its stdout.
 ```
 
 ## Examples
@@ -87,3 +95,15 @@ Gzip stdin then base64 it
 Get rid of the first 2 bytes
 
 `echo -n toto | cryptocli dd -from-byte-in 2`
+
+Output the base64 hash of stdin to file
+
+`echo -n toto | cryptocli dgst -encoders base64 -out file://./toto.txt sha512`
+
+Decode base64 from file to stdout in hex
+
+`cryptocli dd -decoders base64 -encoders hex -in ./toto.txt`
+
+Gzip input, write it to file and write its sha512 checksum in hex format to another file
+
+`echo toto | cryptocli dd -encoders gzip -tee pipe:"cryptocli dgst -encoders hex -out ./checksum.txt" -out ./file.gz`
