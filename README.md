@@ -71,6 +71,10 @@ Codecs:
 	gzip compress output and gzip decompress input
   hexdump
 	Encode output to hexdump -c. Doesn't support decoding
+
+FileTypes:
+ file://
+	Read from a file or write to a file. Default when no <filetype> is specified.
 ```
 
 ## Examples
@@ -90,3 +94,11 @@ Gzip stdin then base64 it
 Get rid of the first 2 bytes
 
 `echo -n toto | cryptocli dd -from-byte-in 2`
+
+Output the base64 hash of stdin to file
+
+`echo -n toto | cryptocli dgst -encoders base64 -out file://./toto.txt sha512`
+
+Decode base64 from file to stdout in hex
+
+`cryptocli dd -decoders base64 -encoders hex -in ./toto.txt`
