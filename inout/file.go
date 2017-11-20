@@ -2,7 +2,6 @@ package inout
 
 import (
   "net/url"
-  "path"
   "os"
 )
 
@@ -45,8 +44,7 @@ type FileInput struct {
 }
 
 func (in *FileInput) Init() (error) {
-  basename := path.Base(in.path)
-  file, err := os.OpenFile(basename, os.O_RDONLY, 000)
+  file, err := os.OpenFile(in.path, os.O_RDONLY, 000)
   if err != nil {
     return err
   }
@@ -75,8 +73,7 @@ type FileOutput struct {
 }
 
 func (out *FileOutput) Init(chomp bool) (error) {
-  basename := path.Base(out.path)
-  file, err := os.OpenFile(basename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0640)
+  file, err := os.OpenFile(out.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0640)
   if err != nil {
     return err
   }
