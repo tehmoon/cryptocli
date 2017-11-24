@@ -7,7 +7,7 @@ import (
 
 var DefaultFile File = File{
   name: "file://",
-  description: "Read from a file or write to a file. Default when no <filetype> is specified.",
+  description: "Read from a file or write to a file. Default when no <filetype> is specified. Truncate output file unless OUTFILENOTRUNC=1 in environment variable.",
 }
 
 type File struct {
@@ -73,7 +73,13 @@ type FileOutput struct {
 }
 
 func (out *FileOutput) Init(chomp bool) (error) {
-  file, err := os.OpenFile(out.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0640)
+  flags := os.O_APPEND|os.O_CREATE|os.O_WRONLY|os.O_TRUNC
+
+  if notrunc := os.Getenv("OUTFILENOTRUNC"); notrunc == "1" {
+    flags = flags ^ os.O_TRUNC
+  }
+
+  file, err := os.OpenFile(out.path, flags, 0640)
   if err != nil {
     return err
   }

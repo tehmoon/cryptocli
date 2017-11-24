@@ -76,7 +76,7 @@ Codecs:
 
 FileTypes:
  file://
-	Read from a file or write to a file. Default when no <filetype> is specified.
+	Read from a file or write to a file. Default when no <filetype> is specified. Truncate output file unless OUTFILENOTRUNC=1 in environment variable.
  pipe:
 	Run a command in a sub shell. Either write to the command's stdin or read from its stdout.
 ```
