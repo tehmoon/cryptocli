@@ -14,7 +14,6 @@ Pull requests are of course welcome.
   - cleanup the code
   - file types:
     - tls://\<addr>
-    - http://\<addr>/\<path> `read/write to http endpoint`
     - https://\<addr>/\<path> `read/write to https endpoint`
     - tcp://\<addr> `read/write to tcp connection`
     - socket://\<path> `read/write to socket file`
@@ -79,6 +78,8 @@ FileTypes:
 	Read from a file or write to a file. Default when no <filetype> is specified. Truncate output file unless OUTFILENOTRUNC=1 in environment variable.
  pipe:
 	Run a command in a sub shell. Either write to the command's stdin or read from its stdout.
+ http://
+	Get http url or post the output to https. Max redirects count is 3. Will fail if scheme changes.
 ```
 
 ## Examples
@@ -110,3 +111,7 @@ Decode base64 from file to stdout in hex
 Gzip input, write it to file and write its sha512 checksum in hex format to another file
 
 `echo toto | cryptocli dd -encoders gzip -tee pipe:"cryptocli dgst -encoders hex -out ./checksum.txt" -out ./file.gz`
+
+SHA512 an http web page:
+
+`cryptocli dgst -in http://www.google.com -encoders hex sha512`
