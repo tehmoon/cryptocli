@@ -10,6 +10,8 @@ var (
   InoutList []IO = []IO{
     DefaultFile,
     DefaultPipe,
+    DefaultHttps,
+    DefaultHttp,
   }
 )
 
@@ -67,6 +69,10 @@ func parse(inout string) (*url.URL, IO, error) {
       return uri, DefaultFile, nil
     case "pipe":
       return uri, DefaultPipe, nil
+    case "https":
+      return uri, DefaultHttps, nil
+    case "http":
+      return uri, DefaultHttp, nil
     default:
       return nil, nil, errors.Errorf("Error unknown type %s\n", uri.Scheme)
   }
