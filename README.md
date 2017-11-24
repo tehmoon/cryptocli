@@ -14,7 +14,6 @@ Pull requests are of course welcome.
   - cleanup the code
   - file types:
     - tls://\<addr>
-    - https://\<addr>/\<path> `read/write to https endpoint`
     - tcp://\<addr> `read/write to tcp connection`
     - socket://\<path> `read/write to socket file`
     - fifo://\<path> `read/write to fifo file on filesystem`
@@ -78,6 +77,8 @@ FileTypes:
 	Read from a file or write to a file. Default when no <filetype> is specified. Truncate output file unless OUTFILENOTRUNC=1 in environment variable.
  pipe:
 	Run a command in a sub shell. Either write to the command's stdin or read from its stdout.
+ https://
+	Get https url or post the output to https. Use INHTTPSNOVERIFY=1 and/or OUTHTTPSNOVERIFY=1 environment variables to disable certificate check. Max redirects count is 3. Will fail if scheme changes.
  http://
 	Get http url or post the output to https. Max redirects count is 3. Will fail if scheme changes.
 ```
@@ -112,6 +113,6 @@ Gzip input, write it to file and write its sha512 checksum in hex format to anot
 
 `echo toto | cryptocli dd -encoders gzip -tee pipe:"cryptocli dgst -encoders hex -out ./checksum.txt" -out ./file.gz`
 
-SHA512 an http web page:
+SHA512 an https web page then POST the result to http server:
 
-`cryptocli dgst -in http://www.google.com -encoders hex sha512`
+`cryptocli dgst -in https://www.google.com -encoders hex sha512 -out http://localhost:12345/`
