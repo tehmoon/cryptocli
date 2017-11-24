@@ -9,6 +9,8 @@ Pull requests are of course welcome.
 ## Futur
 
   - download x509 certificates from https
+  - http/https proxy
+  - http/https servers
   - cleanup the code
   - file types:
     - tls://\<addr>
@@ -18,11 +20,12 @@ Pull requests are of course welcome.
     - socket://\<path> `read/write to socket file`
     - fifo://\<path> `read/write to fifo file on filesystem`
   - commands
-    - aes
     - nacl
     - ec
     - hmac
   - codecs
+    - aes-256-cbc[:`env password`]
+    - aes-512-cbc[:`env password`]
     - base58
     - decimal
     - uint
