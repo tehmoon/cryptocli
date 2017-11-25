@@ -7,7 +7,7 @@ import (
 )
 
 var DefaultBinaryString = &BinaryString{
-  name: "binary_string",
+  name: "binary-string",
   description: "Take ascii string of 1 and 0 in input and decode it to binary. A byte is always 8 characters number. Does the opposite for output",
 }
 

@@ -80,7 +80,7 @@ Codecs:
 	hex encode output and hex decode input
   binary
 	Do nothing in input and nothing in output
-  binary_string
+  binary-string
 	Take ascii string of 1 and 0 in input and decode it to binary. A byte is always 8 characters number. Does the opposite for output
   base64
 	base64 decode input and base64 encode output
@@ -108,7 +108,7 @@ Get the last 32 byte of a sha512 hash function from a hex string to base64 witho
 
 Transform stdin to binary string
 
-`echo -n toto | cryptocli dd -encoders binary_string`
+`echo -n toto | cryptocli dd -encoders binary-string`
 
 Gzip stdin then base64 it
 

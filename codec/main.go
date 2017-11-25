@@ -69,7 +69,7 @@ func Parse(codecStr string) (*CodecValues, error) {
       return &CodecValues{Codec: DefaultHex, Values: values,}, nil
     case "binary":
       return &CodecValues{Codec: DefaultBinary, Values: values,}, nil
-    case "binary_string":
+    case "binary-string":
       return &CodecValues{Codec: DefaultBinaryString, Values: values,}, nil
     case "base64":
       return &CodecValues{Codec: DefaultBase64, Values: values,}, nil
