@@ -4,6 +4,7 @@ import (
   "io"
   "fmt"
   "encoding/hex"
+  "net/url"
 )
 
 var DefaultHex = &Hex{
@@ -34,13 +35,13 @@ type HexEncoder struct {
   pipeWriter *io.PipeWriter
 }
 
-func (codec Hex) Decoder() (CodecDecoder) {
+func (codec Hex) Decoder(values url.Values) (CodecDecoder) {
   dec := &HexDecoder{}
   dec.pipeReader, dec.pipeWriter = io.Pipe()
   return dec
 }
 
-func (codec Hex) Encoder() (CodecEncoder) {
+func (codec Hex) Encoder(values url.Values) (CodecEncoder) {
   enc := &HexEncoder{}
   enc.pipeReader, enc.pipeWriter = io.Pipe()
   return enc

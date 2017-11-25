@@ -3,6 +3,7 @@ package codec
 import (
   "compress/gzip"
   "io"
+  "net/url"
 )
 
 var DefaultGzip = &Gzip{
@@ -35,13 +36,13 @@ type GzipEncoder struct {
   gzipWriter *gzip.Writer
 }
 
-func (codec Gzip) Decoder() (CodecDecoder) {
+func (codec Gzip) Decoder(values url.Values) (CodecDecoder) {
   dec := &GzipDecoder{}
   dec.pipeReader, dec.pipeWriter = io.Pipe()
   return dec
 }
 
-func (codec Gzip) Encoder() (CodecEncoder) {
+func (codec Gzip) Encoder(values url.Values) (CodecEncoder) {
   enc := &GzipEncoder{}
   enc.pipeReader, enc.pipeWriter = io.Pipe()
   enc.gzipWriter = gzip.NewWriter(enc.pipeWriter)
