@@ -9,21 +9,38 @@ Pull requests are of course welcome.
 ## Futur
 
   - download x509 certificates from https
-  - http/https proxy
-  - http/https servers
+  - http/https/ssl-strip proxy
+  - http/https/ws/wss servers
+  - tcp/tls server
   - cleanup the code
+  - code coverage
+  - unit tests
+  - go tool suite
+  - options:
+    - interval
+    - timeout
+    - loop
+    - err `redirect error`
+    - debug `redirect debug`
+    - delimiter pipe `from input reset pipes everytime it hits the delimiter`
   - file types:
     - tls://\<addr>
+    - readline:\<EOF> `read lines from terminal's stdin util the word EOF is reached.`
     - tcp://\<addr> `read/write to tcp connection`
     - socket://\<path> `read/write to socket file`
+    - ws://\<path> `read/write to http websocket`
+    - wss://\<path> `read/write to htts websocket`
     - fifo://\<path> `read/write to fifo file on filesystem`
+    - scp://\<path> `copy from/to sshv2 server`
+    - s3://\<path> `copy from/to amazon s3`
+    - kafka://\<host>/\<topic> `receive/send message to kafka`
   - commands
     - nacl
     - ec
     - hmac
   - codecs
+    - delete-chars:`characters`
     - aes-256-cbc[:`env password`]
-    - aes-512-cbc[:`env password`]
     - base58
     - decimal
     - uint
