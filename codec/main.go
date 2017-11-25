@@ -78,7 +78,7 @@ func Parse(codecStr string) (*CodecValues, error) {
     case "hexdump":
       return &CodecValues{Codec: DefaultHexdump, Values: values,}, nil
     default:
-      return nil, ErrCodecUnknown
+      return nil, errors.Wrapf(ErrCodecUnknown, "Error parsing codec type: %s", codec)
   }
 }
 

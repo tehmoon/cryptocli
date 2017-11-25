@@ -30,7 +30,7 @@ func main() {
     if len(inout.InoutList) > 0 {
       fmt.Fprintln(os.Stderr, "\nFileTypes:")
       for _, i := range inout.InoutList {
-        fmt.Fprintf(os.Stderr, " %s\n\t%s\n", i.Name(), i.Description())
+        fmt.Fprintf(os.Stderr, "  %s\n\t%s\n", i.Name(), i.Description())
       }
     }
 
