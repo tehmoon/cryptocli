@@ -19,20 +19,19 @@ type Dgst struct {
   usage *flags.Usage
 }
 
-var Command *Dgst
+var Command = &Dgst{
+  name: "dgst",
+  description: "Hash the content of stdin",
+  usage: &flags.Usage{
+    CommandLine: "<hash algorithm>",
+    Other: "Hash Algorithms:\n  sha256\n  sha512",
+  },
+}
 
-func init() {
-  command := &Dgst{
-    name: "dgst",
-    description: "Hash the content of stdin",
-    usage: &flags.Usage{
-      CommandLine: "<hash algorithm>",
-      Other: "Hash Algorithms:\n  sha256\n  sha512",
-    },
-  }
+func (command *Dgst) Init() (error) {
   command.pipeReader, command.pipeWriter = io.Pipe()
 
-  Command = command
+  return nil
 }
 
 func (command Dgst) Usage() (*flags.Usage) {

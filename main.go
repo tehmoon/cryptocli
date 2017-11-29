@@ -16,6 +16,7 @@ func main() {
   command := parseCommand()
   globalFlags := flags.SetupFlags(flag.CommandLine)
   command.SetupFlags(flag.CommandLine)
+
   flag.CommandLine.Usage = func () {
     usage := command.Usage()
     fmt.Fprintf(os.Stderr, "Usage: %s [<Options>] %s\n\nOptions:\n", os.Args[0], usage.CommandLine)
@@ -45,6 +46,11 @@ func main() {
     os.Exit(2)
   }
 
+  err = command.Init()
+  if err != nil {
+    fmt.Fprintf(os.Stderr, "Error initializing command: %s: %v", command.Name(), err)
+  }
+
   done := make(chan struct{})
   byteCounterIn := newByteCounter(globalOptions.FromByteIn, globalOptions.ToByteIn)
   byteCounterOut := newByteCounter(globalOptions.FromByteOut, globalOptions.ToByteOut)
@@ -56,7 +62,7 @@ func main() {
       os.Exit(1)
     }
 
-    err = globalOptions.Output.Init(globalFlags.Chomp)
+    err = globalOptions.Output.Init()
     if err != nil {
       fmt.Fprintf(os.Stderr, "Err initializing output: %v", err)
       os.Exit(1)
@@ -66,7 +72,7 @@ func main() {
     lastReader = globalOptions.Encoders[len(globalOptions.Encoders) - 1]
 
     if globalOptions.Tee != nil {
-      err = globalOptions.Tee.Init(globalFlags.Chomp)
+      err = globalOptions.Tee.Init()
       if err != nil {
         fmt.Fprintf(os.Stderr, "Err initializing output: %v", err)
         os.Exit(1)
@@ -80,6 +86,8 @@ func main() {
       fmt.Fprintf(os.Stderr, "Err in reading encoder: %v", err)
       os.Exit(1)
     }
+
+    globalOptions.Output.Chomp(globalFlags.Chomp)
 
     err = globalOptions.Output.Close()
     if err != nil {

@@ -110,7 +110,7 @@ func (in *HttpsInput) Read(p []byte) (int, error) {
   return in.pipeReader.Read(p)
 }
 
-func (out HttpsOutput) Init(chomp bool) (error) {
+func (out HttpsOutput) Init() (error) {
   transport := copyDefaultHTTPTransport()
   client := &http.Client{
     Transport: transport,
@@ -153,3 +153,5 @@ func (out HttpsOutput) Close() (error) {
 func (out HttpsOutput) Name() (string) {
   return out.name
 }
+
+func (out HttpsOutput) Chomp(chomp bool) {}

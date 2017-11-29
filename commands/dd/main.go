@@ -14,20 +14,19 @@ type Dd struct {
   usage *flags.Usage
 }
 
-var Command *Dd
+var Command = &Dd{
+  name: "dd",
+  description: "Copy input to output like the dd tool.",
+  usage: &flags.Usage{
+    CommandLine: "",
+    Other: "",
+  },
+}
 
-func init() {
-  command := &Dd{
-    name: "dd",
-    description: "Copy input to output like the dd tool.",
-    usage: &flags.Usage{
-      CommandLine: "",
-      Other: "",
-    },
-  }
+func (command *Dd) Init() (error) {
   command.pipeReader, command.pipeWriter = io.Pipe()
 
-  Command = command
+  return nil
 }
 
 func (command Dd) Usage() (*flags.Usage) {

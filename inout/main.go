@@ -30,7 +30,8 @@ type Input interface {
 
 type Output interface {
   io.WriteCloser
-  Init(chomp bool) (error)
+  Init() (error)
+  Chomp(bool)
   Name() (string)
 }
 

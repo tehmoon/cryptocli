@@ -192,7 +192,7 @@ func (in PipeInput) Name() (string) {
   return in.name
 }
 
-func (out PipeOutput) Init(bool) (error) {
+func (out PipeOutput) Init() (error) {
   if out.command == "" {
     return errors.New("No command to pipe to stdout\n")
   }
@@ -241,3 +241,5 @@ func (out PipeOutput) Close() (error) {
 func (out PipeOutput) Name() (string) {
   return out.name
 }
+
+func (out PipeOutput) Chomp(chomp bool) {}
