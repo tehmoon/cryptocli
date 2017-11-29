@@ -3,10 +3,11 @@ package codec
 import (
   "io"
   "github.com/pkg/errors"
+  "net/url"
 )
 
 var DefaultBinaryString = &BinaryString{
-  name: "binary_string",
+  name: "binary-string",
   description: "Take ascii string of 1 and 0 in input and decode it to binary. A byte is always 8 characters number. Does the opposite for output",
 }
 
@@ -33,13 +34,13 @@ type BinaryStringEncoder struct {
   pipeWriter *io.PipeWriter
 }
 
-func (codec BinaryString) Decoder() (CodecDecoder) {
+func (codec BinaryString) Decoder(values url.Values) (CodecDecoder) {
   dec := &BinaryStringDecoder{}
   dec.pipeReader, dec.pipeWriter = io.Pipe()
   return dec
 }
 
-func (codec BinaryString) Encoder() (CodecEncoder) {
+func (codec BinaryString) Encoder(values url.Values) (CodecEncoder) {
   enc := &BinaryStringEncoder{}
   enc.pipeReader, enc.pipeWriter = io.Pipe()
   return enc

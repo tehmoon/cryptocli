@@ -54,17 +54,17 @@ func ParseFlags(set *flag.FlagSet, globalFlags *GlobalFlags) (*GlobalOptions) {
   }
 
   if globalFlags.Decoders != "" {
-    codecs, err := codec.ParseAll(strings.Split(globalFlags.Decoders, ","))
+    cvs, err := codec.ParseAll(strings.Split(globalFlags.Decoders, ","))
     if err != nil {
-      fmt.Fprintf(os.Stderr, "%v", err)
+      fmt.Fprintf(os.Stderr, "Error parsing decoders. Err: %v", err)
       os.Exit(2)
     }
 
-    decoders := make([]codec.CodecDecoder, len(codecs))
-    for i, decoder := range codecs {
-      dec := decoder.Decoder()
+    decoders := make([]codec.CodecDecoder, len(cvs))
+    for i, cv := range cvs {
+      dec := cv.Codec.Decoder(cv.Values)
       if dec == nil {
-        fmt.Fprintf(os.Stderr, "Codec %s doesn't support decoding\n", decoder.Name())
+        fmt.Fprintf(os.Stderr, "Codec %s doesn't support decoding\n", cv.Codec.Name())
         os.Exit(2)
       }
 
@@ -75,17 +75,17 @@ func ParseFlags(set *flag.FlagSet, globalFlags *GlobalFlags) (*GlobalOptions) {
   }
 
   if globalFlags.Encoders != "" {
-    codecs, err := codec.ParseAll(strings.Split(globalFlags.Encoders, ","))
+    cvs, err := codec.ParseAll(strings.Split(globalFlags.Encoders, ","))
     if err != nil {
-      fmt.Fprintf(os.Stderr, "%v", err)
+      fmt.Fprintf(os.Stderr, "Error parsing encoders. Err: %v", err)
       os.Exit(2)
     }
 
-    encoders := make([]codec.CodecEncoder, len(codecs))
-    for i, encoder := range codecs {
-      enc := encoder.Encoder()
+    encoders := make([]codec.CodecEncoder, len(cvs))
+    for i, cv := range cvs {
+      enc := cv.Codec.Encoder(cv.Values)
       if enc == nil {
-        fmt.Fprintf(os.Stderr, "Codec %s doesn't support encoding\n", encoder.Name())
+        fmt.Fprintf(os.Stderr, "Codec %s doesn't support encoding\n", cv.Codec.Name())
         os.Exit(2)
       }
 

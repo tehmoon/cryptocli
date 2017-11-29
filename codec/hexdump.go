@@ -3,6 +3,7 @@ package codec
 import (
   "io"
   "encoding/hex"
+  "net/url"
 )
 
 var DefaultHexdump = &Hexdump{
@@ -29,11 +30,11 @@ type HexdumpEncoder struct {
   dumper io.WriteCloser
 }
 
-func (codec Hexdump) Decoder() (CodecDecoder) {
+func (codec Hexdump) Decoder(values url.Values) (CodecDecoder) {
   return nil
 }
 
-func (codec Hexdump) Encoder() (CodecEncoder) {
+func (codec Hexdump) Encoder(values url.Values) (CodecEncoder) {
   enc := &HexdumpEncoder{}
   enc.pipeReader, enc.pipeWriter = io.Pipe()
   enc.dumper = hex.Dumper(enc.pipeWriter)

@@ -2,6 +2,7 @@ package codec
 
 import (
   "io"
+  "net/url"
   "github.com/pkg/errors"
   "encoding/base64"
 )
@@ -36,7 +37,7 @@ type Base64Encoder struct {
   encoder io.WriteCloser
 }
 
-func (codec Base64) Decoder() (CodecDecoder) {
+func (codec Base64) Decoder(values url.Values) (CodecDecoder) {
   dec := &Base64Decoder{
   }
   dec.pipeReader, dec.pipeWriter = io.Pipe()
@@ -44,7 +45,7 @@ func (codec Base64) Decoder() (CodecDecoder) {
   return dec
 }
 
-func (codec Base64) Encoder() (CodecEncoder) {
+func (codec Base64) Encoder(values url.Values) (CodecEncoder) {
   enc := &Base64Encoder{}
   enc.pipeReader, enc.pipeWriter = io.Pipe()
   enc.encoder = base64.NewEncoder(base64.StdEncoding, enc.pipeWriter)

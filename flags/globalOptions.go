@@ -23,9 +23,9 @@ type GlobalOptions struct {
 func newGlobalOptions() (*GlobalOptions) {
   globalOptions := &GlobalOptions{}
 
-  c, _ := codec.Parse("binary")
-  globalOptions.Decoders = []codec.CodecDecoder{c.Decoder(),}
-  globalOptions.Encoders = []codec.CodecEncoder{c.Encoder(),}
+  cv, _ := codec.Parse("binary")
+  globalOptions.Decoders = []codec.CodecDecoder{cv.Codec.Decoder(cv.Values),}
+  globalOptions.Encoders = []codec.CodecEncoder{cv.Codec.Encoder(cv.Values),}
 
   return globalOptions
 }

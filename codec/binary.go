@@ -2,6 +2,7 @@ package codec
 
 import (
   "io"
+  "net/url"
 )
 
 var DefaultBinary = &Binary{
@@ -32,13 +33,13 @@ type BinaryEncoder struct {
   pipeWriter *io.PipeWriter
 }
 
-func (codec Binary) Decoder() (CodecDecoder) {
+func (codec Binary) Decoder(values url.Values) (CodecDecoder) {
   dec := &BinaryDecoder{}
   dec.pipeReader, dec.pipeWriter = io.Pipe()
   return dec
 }
 
-func (codec Binary) Encoder() (CodecEncoder) {
+func (codec Binary) Encoder(values url.Values) (CodecEncoder) {
   enc := &BinaryEncoder{}
   enc.pipeReader, enc.pipeWriter = io.Pipe()
   return enc
