@@ -6,6 +6,10 @@ I use decoding/encoding tools, dd and openssl all the time. It was getting a lit
 
 Pull requests are of course welcome.
 
+## Internal data flow
+
+Input -> tee input -> decoders -> byte counter in -> tee command input -> command -> tee command output -> byte counter out -> encoders -> tee output -> output
+
 ## Futur
 
   - download x509 certificates from https
@@ -34,10 +38,14 @@ Pull requests are of course welcome.
     - scp://\<path> `copy from/to sshv2 server`
     - s3://\<path> `copy from/to amazon s3`
     - kafka://\<host>/\<topic> `receive/send message to kafka`
+    - env:\<name> `read/write environment variable`
   - commands
     - nacl
     - ec
     - hmac
+    - scrypt
+    - pbkdf2
+    - compare # hashes 2 source of input then suble compare them. can specify hash function, doesn't use -in but uses 2 other options with no codec.
   - codecs
     - delete-chars:`characters`
     - aes-256-cbc[:`env password`]
@@ -68,8 +76,14 @@ Options:
     	Input <fileType> method
   -out string
     	Output <fileType> method
-  -tee string
-    	Copy the output of -output to <fileType>
+  -tee-cmd-in string
+    	Copy output after -decoders and before <command> to <fileType>
+  -tee-cmd-out string
+    	Copy output after <command> and before -encoders to <fileType>
+  -tee-in string
+    	Copy output before -encoders to <fileType>
+  -tee-out string
+    	Copy output after -encoders to <fileType>
   -to-byte-in string
     	Stop at byte x of stdin.  Use 0X/0x for base 16, 0b/0B for base 2, 0 for base8 otherwise base 10. If you add a '+' at the begining, the value will be added to -from-byte-in
   -to-byte-out string
@@ -90,13 +104,13 @@ Codecs:
 	Encode output to hexdump -c. Doesn't support decoding
 
 FileTypes:
- file://
+  file://
 	Read from a file or write to a file. Default when no <filetype> is specified. Truncate output file unless OUTFILENOTRUNC=1 in environment variable.
- pipe:
+  pipe:
 	Run a command in a sub shell. Either write to the command's stdin or read from its stdout.
- https://
+  https://
 	Get https url or post the output to https. Use INHTTPSNOVERIFY=1 and/or OUTHTTPSNOVERIFY=1 environment variables to disable certificate check. Max redirects count is 3. Will fail if scheme changes.
- http://
+  http://
 	Get http url or post the output to https. Max redirects count is 3. Will fail if scheme changes.
 ```
 
@@ -128,7 +142,7 @@ Decode base64 from file to stdout in hex
 
 Gzip input, write it to file and write its sha512 checksum in hex format to another file
 
-`echo toto | cryptocli dd -encoders gzip -tee pipe:"cryptocli dgst -encoders hex -out ./checksum.txt" -out ./file.gz`
+`echo toto | cryptocli dd -encoders gzip -tee-out pipe:"cryptocli dgst -encoders hex -out ./checksum.txt" -out ./file.gz`
 
 SHA512 an https web page then POST the result to http server:
 

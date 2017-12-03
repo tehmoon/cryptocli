@@ -21,7 +21,10 @@ type GlobalFlags struct {
   ToByteOut string
   In string
   Out string
-  Tee string
+  TeeIn string
+  TeeCmdIn string
+  TeeCmdOut string
+  TeeOut string
 }
 
 var ErrBadFlag = errors.New("Bad flags\n")
@@ -33,8 +36,29 @@ func ParseFlags(set *flag.FlagSet, globalFlags *GlobalFlags) (*GlobalOptions) {
 
   var err error
 
-  if globalFlags.Tee != "" {
-    globalOptions.Tee, err = inout.ParseOutput(globalFlags.Tee)
+  if globalFlags.TeeIn != "" {
+    globalOptions.TeeIn, err = inout.ParseOutput(globalFlags.TeeIn)
+    if err != nil {
+      fmt.Fprintf(os.Stderr, "%v", err)
+      os.Exit(2)
+    }
+  }
+  if globalFlags.TeeCmdIn != "" {
+    globalOptions.TeeCmdIn, err = inout.ParseOutput(globalFlags.TeeCmdIn)
+    if err != nil {
+      fmt.Fprintf(os.Stderr, "%v", err)
+      os.Exit(2)
+    }
+  }
+  if globalFlags.TeeCmdOut != "" {
+    globalOptions.TeeCmdOut, err = inout.ParseOutput(globalFlags.TeeCmdOut)
+    if err != nil {
+      fmt.Fprintf(os.Stderr, "%v", err)
+      os.Exit(2)
+    }
+  }
+  if globalFlags.TeeOut != "" {
+    globalOptions.TeeOut, err = inout.ParseOutput(globalFlags.TeeOut)
     if err != nil {
       fmt.Fprintf(os.Stderr, "%v", err)
       os.Exit(2)
@@ -144,7 +168,10 @@ func SetupFlags(set *flag.FlagSet) (*GlobalFlags) {
   set.StringVar(&globalFlags.ToByteOut, "to-byte-out", "0", "Stop at byte x of stdout. Use 0X/0x for base 16, 0b/0B for base 2, 0 for base8 otherwise base 10. If you add a '+' at the begining, the value will be added to -from-byte-out")
   set.StringVar(&globalFlags.In, "in", "", "Input <fileType> method")
   set.StringVar(&globalFlags.Out, "out", "", "Output <fileType> method")
-  set.StringVar(&globalFlags.Tee, "tee", "", "Copy the output of -output to <fileType>")
+  set.StringVar(&globalFlags.TeeIn, "tee-in", "", "Copy output before -encoders to <fileType>")
+  set.StringVar(&globalFlags.TeeCmdIn, "tee-cmd-in", "", "Copy output after -decoders and before <command> to <fileType>")
+  set.StringVar(&globalFlags.TeeCmdOut, "tee-cmd-out", "", "Copy output after <command> and before -encoders to <fileType>")
+  set.StringVar(&globalFlags.TeeOut, "tee-out", "", "Copy output after -encoders to <fileType>")
 
   return globalFlags
 }

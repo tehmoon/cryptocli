@@ -55,6 +55,26 @@ func main() {
   byteCounterIn := newByteCounter(globalOptions.FromByteIn, globalOptions.ToByteIn)
   byteCounterOut := newByteCounter(globalOptions.FromByteOut, globalOptions.ToByteOut)
 
+  var commandOut io.Reader = command
+
+  if globalOptions.TeeCmdOut != nil {
+    err := globalOptions.TeeCmdOut.Init()
+    if err != nil {
+      fmt.Fprintf(os.Stderr, "Error initializing tee command output: %v", err)
+      os.Exit(1)
+    }
+
+    commandOut = io.TeeReader(command, globalOptions.TeeCmdOut)
+  }
+
+  if globalOptions.TeeCmdIn != nil {
+    err := globalOptions.TeeCmdIn.Init()
+    if err != nil {
+      fmt.Fprintf(os.Stderr, "Error initializing tee command input: %v", err)
+      os.Exit(1)
+    }
+  }
+
   go func() {
     err := globalOptions.Encoders[len(globalOptions.Encoders) - 1].Init()
     if err != nil {
@@ -71,14 +91,14 @@ func main() {
     var lastReader io.Reader
     lastReader = globalOptions.Encoders[len(globalOptions.Encoders) - 1]
 
-    if globalOptions.Tee != nil {
-      err = globalOptions.Tee.Init()
+    if globalOptions.TeeOut != nil {
+      err = globalOptions.TeeOut.Init()
       if err != nil {
         fmt.Fprintf(os.Stderr, "Err initializing output: %v", err)
         os.Exit(1)
       }
 
-      lastReader = io.TeeReader(lastReader, globalOptions.Tee)
+      lastReader = io.TeeReader(lastReader, globalOptions.TeeOut)
     }
 
     _, err = io.Copy(globalOptions.Output, lastReader)
@@ -127,7 +147,7 @@ func main() {
 
   if globalOptions.FromByteOut != 0 || globalOptions.ToByteOut != 0 {
     go func() {
-       _, err := io.Copy(byteCounterOut, command)
+       _, err := io.Copy(byteCounterOut, commandOut)
       if err != nil {
         fmt.Fprintf(os.Stderr, "Err reading in command: %v", err)
         os.Exit(1)
@@ -155,7 +175,7 @@ func main() {
     }(globalOptions.Encoders[0])
   } else {
     go func(encoderReader codec.CodecEncoder) {
-       _, err = io.Copy(encoderReader, command)
+       _, err = io.Copy(encoderReader, commandOut)
       if err != nil {
         fmt.Fprintf(os.Stderr, "Err reading in encoderReader: %v", err)
         os.Exit(1)
@@ -217,7 +237,13 @@ func main() {
     }()
 
     go func() {
-       _, err := io.Copy(command, byteCounterIn)
+      var commandIn io.Reader = byteCounterIn
+
+      if globalOptions.TeeCmdIn != nil {
+        commandIn = io.TeeReader(commandIn, globalOptions.TeeCmdIn)
+      }
+
+       _, err := io.Copy(command, commandIn)
       if err != nil {
         fmt.Fprintf(os.Stderr, "Err reading in byteCounterIn: %v", err)
         os.Exit(1)
@@ -236,7 +262,14 @@ func main() {
         fmt.Fprintf(os.Stderr, "Err in init decoder: %v", err)
         os.Exit(1)
       }
-      _, err = io.Copy(command, decoder)
+
+      var commandIn io.Reader = decoder
+
+      if globalOptions.TeeCmdIn != nil {
+        commandIn = io.TeeReader(commandIn, globalOptions.TeeCmdIn)
+      }
+
+      _, err = io.Copy(command, commandIn)
       if err != nil {
         fmt.Fprintf(os.Stderr, "Err in reading decoder decoderReader: %v", err)
         os.Exit(1)
@@ -263,10 +296,38 @@ func main() {
       os.Exit(1)
     }
 
-    _, err = io.Copy(globalOptions.Decoders[0], globalOptions.Input)
+    var reader io.Reader
+
+    reader = globalOptions.Input
+
+    if globalOptions.TeeIn != nil {
+      err := globalOptions.TeeIn.Init()
+      if err != nil {
+        fmt.Fprintf(os.Stderr, "Error initializing tee input: %v", err)
+        os.Exit(1)
+      }
+
+      reader = io.TeeReader(globalOptions.Input, globalOptions.TeeIn)
+    }
+
+    _, err = io.Copy(globalOptions.Decoders[0], reader)
     if err != nil {
       fmt.Fprintf(os.Stderr, "Error in decoding input: %v", err)
       os.Exit(1)
+    }
+
+    err = globalOptions.Input.Close()
+    if err != nil {
+      fmt.Fprintln(os.Stderr, err)
+      os.Exit(1)
+    }
+
+    if globalOptions.TeeIn != nil {
+      err = globalOptions.TeeIn.Close()
+      if err != nil {
+        fmt.Fprintln(os.Stderr, err)
+        os.Exit(1)
+      }
     }
 
     err = globalOptions.Decoders[0].Close()
