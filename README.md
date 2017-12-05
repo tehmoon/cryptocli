@@ -45,7 +45,6 @@ Input -> tee input -> decoders -> byte counter in -> tee command input -> comman
     - ec
     - hmac
     - scrypt -salt-in \<filetype> -salt-length 32 -key-length 32 -rounds 16384
-    - pbkdf2 -salt-in \<filetype> -salt-length 32 -key-length 32 -rounds 16384
     - compare # hashes 2 source of input then suble compare them. can specify hash function, doesn't use -in but uses 2 other options with no codec.
   - codecs
     - delete-chars:`characters`
@@ -164,4 +163,16 @@ SHA512 an https web page then POST the result to http server:
 
 ```
 cryptocli dgst -in https://www.google.com -encoders hex sha512 -out http://localhost:12345/
+```
+
+Generate 32 byte salt and derive a 32 bytes key from input to `derivated-key.txt` file.
+
+```
+echo -n toto | cryptocli pbkdf2 -encoders base64 -out derivated-key.txt
+```
+
+You should have the same result as in `derivated-key.txt` file
+
+```
+echo -n toto | cryptcli pbkdf2 -salt-in pipe:"cryptocli dd -decoders base64 -to-byte-in 32" -encoders base64
 ```
