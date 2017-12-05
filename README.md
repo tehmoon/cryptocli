@@ -38,17 +38,17 @@ Input -> tee input -> decoders -> byte counter in -> tee command input -> comman
     - scp://\<path> `copy from/to sshv2 server`
     - s3://\<path> `copy from/to amazon s3`
     - kafka://\<host>/\<topic> `receive/send message to kafka`
-    - env:\<name> `read/write environment variable`
+    - env:\<name> `read environment variable`
   - commands
+    - aes-256-cbc -key-in \<filetype> -derived-key-in \<filetype> -salt-pos 0 -salt-length 32 -salt-in \<filetype> -iv-in \<filetype> -iv-pos 32 -iv-length 32
     - nacl
     - ec
     - hmac
-    - scrypt
-    - pbkdf2
+    - scrypt -salt-in \<filetype> -salt-length 32 -key-length 32 -rounds 16384
+    - pbkdf2 -salt-in \<filetype> -salt-length 32 -key-length 32 -rounds 16384
     - compare # hashes 2 source of input then suble compare them. can specify hash function, doesn't use -in but uses 2 other options with no codec.
   - codecs
     - delete-chars:`characters`
-    - aes-256-cbc[:`env password`]
     - base58
     - decimal
     - uint
@@ -56,10 +56,12 @@ Input -> tee input -> decoders -> byte counter in -> tee command input -> comman
 
 ## Usage
 
-`cryptocli <command> [<options>] [<arguments>]`
+```
+cryptocli <command> [<options>] [<arguments>]
+```
 
 ```
-Usage: ./cryptocli [<Options>] 
+Usage: ./cryptocli [<options>] 
 
 Options:
   -chomp
@@ -118,32 +120,48 @@ FileTypes:
 
 Get the last 32 byte of a sha512 hash function from a hex string to base64 without last \n
 
-`echo -n 'DEADBEEF' | cryptocli dgst -decoder hex -encoder base64 -from-byte-out 32 -to-byte-out +32 -chomp sha512`
+```
+echo -n 'DEADBEEF' | cryptocli dgst -decoder hex -encoder base64 -from-byte-out 32 -to-byte-out +32 -chomp sha512
+```
 
 Transform stdin to binary string
 
-`echo -n toto | cryptocli dd -encoders binary-string`
+```
+echo -n toto | cryptocli dd -encoders binary-string
+```
 
 Gzip stdin then base64 it
 
-`echo -n toto | cryptocli dd -encoders gzip,base64`
+```
+echo -n toto | cryptocli dd -encoders gzip,base64
+```
 
 Get rid of the first 2 bytes
 
-`echo -n toto | cryptocli dd -from-byte-in 2`
+```
+echo -n toto | cryptocli dd -from-byte-in 2
+```
 
 Output the base64 hash of stdin to file
 
-`echo -n toto | cryptocli dgst -encoders base64 -out file://./toto.txt sha512`
+```
+echo -n toto | cryptocli dgst -encoders base64 -out file://./toto.txt sha512
+```
 
 Decode base64 from file to stdout in hex
 
-`cryptocli dd -decoders base64 -encoders hex -in ./toto.txt`
+```
+cryptocli dd -decoders base64 -encoders hex -in ./toto.txt
+```
 
 Gzip input, write it to file and write its sha512 checksum in hex format to another file
 
-`echo toto | cryptocli dd -encoders gzip -tee-out pipe:"cryptocli dgst -encoders hex -out ./checksum.txt" -out ./file.gz`
+```
+echo toto | cryptocli dd -encoders gzip -tee-out pipe:"cryptocli dgst -encoders hex -out ./checksum.txt" -out ./file.gz
+```
 
 SHA512 an https web page then POST the result to http server:
 
-`cryptocli dgst -in https://www.google.com -encoders hex sha512 -out http://localhost:12345/`
+```
+cryptocli dgst -in https://www.google.com -encoders hex sha512 -out http://localhost:12345/
+```
