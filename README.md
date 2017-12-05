@@ -44,7 +44,6 @@ Input -> tee input -> decoders -> byte counter in -> tee command input -> comman
     - nacl
     - ec
     - hmac
-    - scrypt -salt-in \<filetype> -salt-length 32 -key-length 32 -rounds 16384
     - compare # hashes 2 source of input then suble compare them. can specify hash function, doesn't use -in but uses 2 other options with no codec.
   - codecs
     - delete-chars:`characters`

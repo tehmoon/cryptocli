@@ -5,6 +5,7 @@ import (
   "./commands/dd"
   "./commands/dgst"
   "./commands/pbkdf2"
+  "./commands/scrypt"
   "./flags"
   "./codec"
   "./inout"
@@ -345,6 +346,7 @@ var CommandList = []Command{
   dd.Command,
   dgst.Command,
   pbkdf2.Command,
+  scrypt.Command,
 }
 
 func UsageCommand() {
@@ -368,6 +370,8 @@ func parseCommand() (CommandPipe) {
       return dgst.Command
     case pbkdf2.Command.Name():
       return pbkdf2.Command
+    case scrypt.Command.Name():
+      return scrypt.Command
     default:
       fmt.Fprintf(os.Stderr, "Unknown command: %s\n", command)
       UsageCommand()
