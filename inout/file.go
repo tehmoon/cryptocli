@@ -72,7 +72,7 @@ type FileOutput struct {
   name string
 }
 
-func (out *FileOutput) Init(chomp bool) (error) {
+func (out *FileOutput) Init() (error) {
   flags := os.O_APPEND|os.O_CREATE|os.O_WRONLY|os.O_TRUNC
 
   if notrunc := os.Getenv("OUTFILENOTRUNC"); notrunc == "1" {
@@ -100,3 +100,5 @@ func (out *FileOutput) Close() (error) {
 func (out FileOutput) Name() (string) {
   return out.name
 }
+
+func (out FileOutput) Chomp(chomp bool) {}

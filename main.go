@@ -4,6 +4,8 @@ import (
   "os"
   "./commands/dd"
   "./commands/dgst"
+  "./commands/pbkdf2"
+  "./commands/scrypt"
   "./flags"
   "./codec"
   "./inout"
@@ -16,6 +18,7 @@ func main() {
   command := parseCommand()
   globalFlags := flags.SetupFlags(flag.CommandLine)
   command.SetupFlags(flag.CommandLine)
+
   flag.CommandLine.Usage = func () {
     usage := command.Usage()
     fmt.Fprintf(os.Stderr, "Usage: %s [<Options>] %s\n\nOptions:\n", os.Args[0], usage.CommandLine)
@@ -45,9 +48,34 @@ func main() {
     os.Exit(2)
   }
 
+  err = command.Init()
+  if err != nil {
+    fmt.Fprintf(os.Stderr, "Error initializing command: %s: %v", command.Name(), err)
+  }
+
   done := make(chan struct{})
   byteCounterIn := newByteCounter(globalOptions.FromByteIn, globalOptions.ToByteIn)
   byteCounterOut := newByteCounter(globalOptions.FromByteOut, globalOptions.ToByteOut)
+
+  var commandOut io.Reader = command
+
+  if globalOptions.TeeCmdOut != nil {
+    err := globalOptions.TeeCmdOut.Init()
+    if err != nil {
+      fmt.Fprintf(os.Stderr, "Error initializing tee command output: %v", err)
+      os.Exit(1)
+    }
+
+    commandOut = io.TeeReader(command, globalOptions.TeeCmdOut)
+  }
+
+  if globalOptions.TeeCmdIn != nil {
+    err := globalOptions.TeeCmdIn.Init()
+    if err != nil {
+      fmt.Fprintf(os.Stderr, "Error initializing tee command input: %v", err)
+      os.Exit(1)
+    }
+  }
 
   go func() {
     err := globalOptions.Encoders[len(globalOptions.Encoders) - 1].Init()
@@ -56,7 +84,7 @@ func main() {
       os.Exit(1)
     }
 
-    err = globalOptions.Output.Init(globalFlags.Chomp)
+    err = globalOptions.Output.Init()
     if err != nil {
       fmt.Fprintf(os.Stderr, "Err initializing output: %v", err)
       os.Exit(1)
@@ -65,14 +93,14 @@ func main() {
     var lastReader io.Reader
     lastReader = globalOptions.Encoders[len(globalOptions.Encoders) - 1]
 
-    if globalOptions.Tee != nil {
-      err = globalOptions.Tee.Init(globalFlags.Chomp)
+    if globalOptions.TeeOut != nil {
+      err = globalOptions.TeeOut.Init()
       if err != nil {
         fmt.Fprintf(os.Stderr, "Err initializing output: %v", err)
         os.Exit(1)
       }
 
-      lastReader = io.TeeReader(lastReader, globalOptions.Tee)
+      lastReader = io.TeeReader(lastReader, globalOptions.TeeOut)
     }
 
     _, err = io.Copy(globalOptions.Output, lastReader)
@@ -80,6 +108,8 @@ func main() {
       fmt.Fprintf(os.Stderr, "Err in reading encoder: %v", err)
       os.Exit(1)
     }
+
+    globalOptions.Output.Chomp(globalFlags.Chomp)
 
     err = globalOptions.Output.Close()
     if err != nil {
@@ -119,7 +149,7 @@ func main() {
 
   if globalOptions.FromByteOut != 0 || globalOptions.ToByteOut != 0 {
     go func() {
-       _, err := io.Copy(byteCounterOut, command)
+       _, err := io.Copy(byteCounterOut, commandOut)
       if err != nil {
         fmt.Fprintf(os.Stderr, "Err reading in command: %v", err)
         os.Exit(1)
@@ -147,7 +177,7 @@ func main() {
     }(globalOptions.Encoders[0])
   } else {
     go func(encoderReader codec.CodecEncoder) {
-       _, err = io.Copy(encoderReader, command)
+       _, err = io.Copy(encoderReader, commandOut)
       if err != nil {
         fmt.Fprintf(os.Stderr, "Err reading in encoderReader: %v", err)
         os.Exit(1)
@@ -209,7 +239,13 @@ func main() {
     }()
 
     go func() {
-       _, err := io.Copy(command, byteCounterIn)
+      var commandIn io.Reader = byteCounterIn
+
+      if globalOptions.TeeCmdIn != nil {
+        commandIn = io.TeeReader(commandIn, globalOptions.TeeCmdIn)
+      }
+
+       _, err := io.Copy(command, commandIn)
       if err != nil {
         fmt.Fprintf(os.Stderr, "Err reading in byteCounterIn: %v", err)
         os.Exit(1)
@@ -228,7 +264,14 @@ func main() {
         fmt.Fprintf(os.Stderr, "Err in init decoder: %v", err)
         os.Exit(1)
       }
-      _, err = io.Copy(command, decoder)
+
+      var commandIn io.Reader = decoder
+
+      if globalOptions.TeeCmdIn != nil {
+        commandIn = io.TeeReader(commandIn, globalOptions.TeeCmdIn)
+      }
+
+      _, err = io.Copy(command, commandIn)
       if err != nil {
         fmt.Fprintf(os.Stderr, "Err in reading decoder decoderReader: %v", err)
         os.Exit(1)
@@ -255,10 +298,38 @@ func main() {
       os.Exit(1)
     }
 
-    _, err = io.Copy(globalOptions.Decoders[0], globalOptions.Input)
+    var reader io.Reader
+
+    reader = globalOptions.Input
+
+    if globalOptions.TeeIn != nil {
+      err := globalOptions.TeeIn.Init()
+      if err != nil {
+        fmt.Fprintf(os.Stderr, "Error initializing tee input: %v", err)
+        os.Exit(1)
+      }
+
+      reader = io.TeeReader(globalOptions.Input, globalOptions.TeeIn)
+    }
+
+    _, err = io.Copy(globalOptions.Decoders[0], reader)
     if err != nil {
       fmt.Fprintf(os.Stderr, "Error in decoding input: %v", err)
       os.Exit(1)
+    }
+
+    err = globalOptions.Input.Close()
+    if err != nil {
+      fmt.Fprintln(os.Stderr, err)
+      os.Exit(1)
+    }
+
+    if globalOptions.TeeIn != nil {
+      err = globalOptions.TeeIn.Close()
+      if err != nil {
+        fmt.Fprintln(os.Stderr, err)
+        os.Exit(1)
+      }
     }
 
     err = globalOptions.Decoders[0].Close()
@@ -274,6 +345,8 @@ func main() {
 var CommandList = []Command{
   dd.Command,
   dgst.Command,
+  pbkdf2.Command,
+  scrypt.Command,
 }
 
 func UsageCommand() {
@@ -295,6 +368,10 @@ func parseCommand() (CommandPipe) {
       return dd.Command
     case dgst.Command.Name():
       return dgst.Command
+    case pbkdf2.Command.Name():
+      return pbkdf2.Command
+    case scrypt.Command.Name():
+      return scrypt.Command
     default:
       fmt.Fprintf(os.Stderr, "Unknown command: %s\n", command)
       UsageCommand()

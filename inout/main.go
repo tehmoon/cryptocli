@@ -12,6 +12,7 @@ var (
     DefaultPipe,
     DefaultHttps,
     DefaultHttp,
+    DefaultEnv,
   }
 )
 
@@ -30,7 +31,8 @@ type Input interface {
 
 type Output interface {
   io.WriteCloser
-  Init(chomp bool) (error)
+  Init() (error)
+  Chomp(bool)
   Name() (string)
 }
 
@@ -73,6 +75,8 @@ func parse(inout string) (*url.URL, IO, error) {
       return uri, DefaultHttps, nil
     case "http":
       return uri, DefaultHttp, nil
+    case "env":
+      return uri, DefaultEnv, nil
     default:
       return nil, nil, errors.Errorf("Error unknown type %s\n", uri.Scheme)
   }

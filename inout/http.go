@@ -92,7 +92,7 @@ func (in *HttpInput) Read(p []byte) (int, error) {
   return in.pipeReader.Read(p)
 }
 
-func (out HttpOutput) Init(chomp bool) (error) {
+func (out HttpOutput) Init() (error) {
   writer, err := writeHTTP(*out.uri, &http.Client{CheckRedirect: httpRedirectPolicy(),}, out.sync)
   if err != nil {
     return err
@@ -119,3 +119,5 @@ func (out HttpOutput) Close() (error) {
 func (out HttpOutput) Name() (string) {
   return out.name
 }
+
+func (out HttpOutput) Chomp(chomp bool) {}

@@ -19,7 +19,6 @@ func (s Std) In(uri *url.URL) (Input) {
 
 func (s Std) Out(uri *url.URL) (Output) {
   return &Stdout{
-    chomp: false,
     name: "stdout",
   }
 }
@@ -37,7 +36,6 @@ type Stdin struct{
 }
 
 type Stdout struct{
-  chomp bool
   name string
 }
 
@@ -66,18 +64,18 @@ func (out Stdout) Write(data []byte) (int, error) {
   return os.Stdout.Write(data)
 }
 
-func (out *Stdout) Init(chomp bool) (error) {
-  out.chomp = chomp
-
+func (out Stdout) Init() (error) {
   return nil
 }
 
-func (out Stdout) Close() (error) {
+func (out Stdout) Chomp(chomp bool) {
   fi, _ := os.Stdout.Stat()
-  if (! (fi.Mode() & os.ModeCharDevice == 0) && ! out.chomp) {
+  if (!(fi.Mode() & os.ModeCharDevice == 0) && !chomp) {
     fmt.Println()
   }
+}
 
+func (out Stdout) Close() (error) {
   return nil
 }
 

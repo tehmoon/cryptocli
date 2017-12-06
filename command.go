@@ -11,6 +11,7 @@ type Command interface {
   Description() (string)
   SetupFlags(*flag.FlagSet)
   ParseFlags() (error)
+  Init() (error)
   Usage() (*flags.Usage)
 }
 

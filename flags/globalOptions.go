@@ -17,7 +17,10 @@ type GlobalOptions struct {
   Bs int
   Ibs int
   Obs int
-  Tee inout.Output
+  TeeIn inout.Output
+  TeeCmdIn inout.Output
+  TeeCmdOut inout.Output
+  TeeOut inout.Output
 }
 
 func newGlobalOptions() (*GlobalOptions) {
