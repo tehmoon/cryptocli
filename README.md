@@ -174,3 +174,9 @@ You should have the same result as in `derivated-key.txt` file
 ```
 echo -n toto | cryptcli pbkdf2 -salt-in pipe:"cryptocli dd -decoders base64 -to-byte-in 32" -encoders base64
 ```
+
+Read key from env then scrypt it
+
+```
+key=blah cryptocli scrypt -in env:key -encoders base64
+```
