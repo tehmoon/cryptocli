@@ -46,6 +46,10 @@ type EnvInput struct {
 }
 
 func (in *EnvInput) Init() (error) {
+  if in.env == "" {
+    return errors.New("Env filetype is missing variable\n")
+  }
+
   env := os.Getenv(in.env)
   in.reader = bytes.NewBufferString(env)
 
