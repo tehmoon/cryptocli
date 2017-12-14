@@ -190,6 +190,12 @@ Filter only PEM objects of type certificate
 cryptocli pipe -filters-cmd-out pem:type=certificate openssl s_client -connect google.com:443
 ```
 
+Get first cert from tls connection
+
+```
+cryptocli get-certs google.com:443
+```
+
 
 ## Internal data flow
 
@@ -198,7 +204,6 @@ Input -> filters-in -> tee input -> decoders -> byte counter in -> filters-cmd-i
 ## Futur
 
   - redo the README.md file
-  - download x509 certificates from https
   - http/https/ssl-strip proxy
   - http/https/ws/wss servers
   - tcp/tls server
