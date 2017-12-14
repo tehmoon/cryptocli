@@ -1,4 +1,4 @@
-package dgst
+package command
 
 import (
   "io"
@@ -6,7 +6,7 @@ import (
   "crypto/sha256"
   "crypto/sha512"
   "hash"
-  "../../flags"
+  "../flags"
 )
 
 type Dgst struct {
@@ -19,7 +19,7 @@ type Dgst struct {
   usage *flags.Usage
 }
 
-var Command = &Dgst{
+var DefaultDgst = &Dgst{
   name: "dgst",
   description: "Hash the content of stdin",
   usage: &flags.Usage{
