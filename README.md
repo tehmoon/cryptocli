@@ -29,7 +29,6 @@ Input -> tee input -> decoders -> byte counter in -> tee command input -> comman
     - delimiter pipe `from input reset pipes everytime it hits the delimiter`
   - file types:
     - tls://\<addr>
-    - readline:\<EOF> `read lines from terminal's stdin util the word EOF is reached.`
     - tcp://\<addr> `read/write to tcp connection`
     - socket://\<path> `read/write to socket file`
     - ws://\<path> `read/write to http websocket`
