@@ -189,3 +189,9 @@ Hash lines read from stdin
 ```
 cryptocli dgst -in readline:WORD -encoders hex
 ```
+
+Execute nc -l 12344 which opens a tcp server and base64 the output
+
+```
+cryptocli pipe -encoders base64 nc -l 12344
+```

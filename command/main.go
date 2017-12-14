@@ -36,6 +36,8 @@ func ParseCommand() (CommandPipe) {
       return DefaultPbkdf2
     case DefaultScrypt.Name():
       return DefaultScrypt
+    case DefaultPipe.Name():
+      return DefaultPipe
     default:
       fmt.Fprintf(os.Stderr, "Unknown command: %s\n", command)
       UsageCommand()
@@ -49,6 +51,7 @@ var CommandList = []Command{
   DefaultDgst,
   DefaultPbkdf2,
   DefaultScrypt,
+  DefaultPipe,
 }
 
 func UsageCommand() {
