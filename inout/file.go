@@ -5,7 +5,7 @@ import (
   "os"
 )
 
-var DefaultFile File = File{
+var DefaultFile = &File{
   name: "file://",
   description: "Read from a file or write to a file. Default when no <filetype> is specified. Truncate output file unless OUTFILENOTRUNC=1 in environment variable.",
 }

@@ -7,7 +7,7 @@ import (
   "io"
 )
 
-var DefaultStd Std = Std{}
+var DefaultStd = &Std{}
 
 type Std struct{}
 

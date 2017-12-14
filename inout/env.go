@@ -8,7 +8,7 @@ import (
   "io"
 )
 
-var DefaultEnv Env = Env{
+var DefaultEnv = &Env{
   name: "env:",
   description: "Read and unset environment variable. Doesn't work for output",
 }

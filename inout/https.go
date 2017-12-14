@@ -8,7 +8,7 @@ import (
   "io"
 )
 
-var DefaultHttps Https = Https{
+var DefaultHttps = &Https{
   name: "https://",
   description: "Get https url or post the output to https. Use INHTTPSNOVERIFY=1 and/or OUTHTTPSNOVERIFY=1 environment variables to disable certificate check. Max redirects count is 3. Will fail if scheme changes.",
 }

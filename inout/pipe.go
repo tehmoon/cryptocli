@@ -11,7 +11,7 @@ import (
 )
 
 var (
-  DefaultPipe Pipe = Pipe{
+  DefaultPipe = &Pipe{
     name: "pipe:",
     description: "Run a command in a sub shell. Either write to the command's stdin or read from its stdout.",
   }
