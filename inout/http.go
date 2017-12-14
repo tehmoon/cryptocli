@@ -6,7 +6,7 @@ import (
   "io"
 )
 
-var DefaultHttp Http = Http{
+var DefaultHttp = &Http{
   name: "http://",
   description: "Get http url or post the output to https. Max redirects count is 3. Will fail if scheme changes.",
 }

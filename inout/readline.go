@@ -8,7 +8,7 @@ import (
   "io"
 )
 
-var DefaultReadline Readline = Readline{
+var DefaultReadline = &Readline{
   name: "readline:",
   description: "Read lines from stdin until WORD is reached.",
 }

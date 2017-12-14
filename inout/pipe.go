@@ -1,7 +1,6 @@
 package inout
 
 import (
-  "fmt"
   "os"
   "net/url"
   "io"
@@ -11,7 +10,7 @@ import (
 )
 
 var (
-  DefaultPipe Pipe = Pipe{
+  DefaultPipe = &Pipe{
     name: "pipe:",
     description: "Run a command in a sub shell. Either write to the command's stdin or read from its stdout.",
   }
@@ -32,7 +31,7 @@ func (p Pipe) In(uri *url.URL) (Input) {
   input := &PipeInput{
     command: command,
     name: "pipe-input",
-    closed: make(chan struct{}, 0),
+    sync: make(chan error),
   }
 
   input.pipeReader, input.pipeWriter = io.Pipe()
@@ -57,6 +56,7 @@ func (p Pipe) Out(uri *url.URL) (Output) {
   output := &PipeOutput{
     command: command,
     name: "pipe-output",
+    sync: make(chan error),
   }
 
   output.pipeReader, output.pipeWriter = io.Pipe()
@@ -70,7 +70,7 @@ type PipeInput struct {
   command string
   cmd *exec.Cmd
   name string
-  closed chan struct{}
+  sync chan error
 }
 
 type PipeOutput struct {
@@ -79,6 +79,7 @@ type PipeOutput struct {
   command string
   cmd *exec.Cmd
   name string
+  sync chan error
 }
 
 func pipeCheckOS() (bool) {
@@ -170,10 +171,8 @@ func (in *PipeInput) Init() (error) {
   go func() {
     io.Copy(in.pipeWriter, stdout)
 
-    _ = in.cmd.Wait()
     in.pipeWriter.Close()
-
-    in.closed <- struct{}{}
+    in.sync <- in.cmd.Wait()
   }()
 
   return nil
@@ -184,8 +183,7 @@ func (in *PipeInput) Read(p []byte) (int, error) {
 }
 
 func (in *PipeInput) Close() (error) {
-  <- in.closed
-  return nil
+  return <- in.sync
 }
 
 func (in PipeInput) Name() (string) {
@@ -217,9 +215,7 @@ func (out PipeOutput) Init() (error) {
 
   go func() {
     io.Copy(stdin, out.pipeReader)
-   _ = out.cmd.Wait()
-  fmt.Println("done waiting")
-
+    out.sync <- out.cmd.Wait()
   }()
 
   return nil

@@ -1,9 +1,9 @@
-package dd
+package command
 
 import (
   "io"
   "flag"
-  "../../flags"
+  "../flags"
 )
 
 type Dd struct {
@@ -14,7 +14,7 @@ type Dd struct {
   usage *flags.Usage
 }
 
-var Command = &Dd{
+var DefaultDd = &Dd{
   name: "dd",
   description: "Copy input to output like the dd tool.",
   usage: &flags.Usage{

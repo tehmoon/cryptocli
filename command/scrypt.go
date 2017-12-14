@@ -1,4 +1,4 @@
-package pbkdf2
+package command
 
 import (
   "io"
@@ -6,51 +6,42 @@ import (
   "io/ioutil"
   "github.com/pkg/errors"
   "flag"
-  "../../flags"
-  "hash"
-  "crypto/sha1"
-  "crypto/sha256"
-  "crypto/sha512"
-  "golang.org/x/crypto/pbkdf2"
-  "../../inout"
+  "../flags"
+  "golang.org/x/crypto/scrypt"
+  "../inout"
   cryptoRand "crypto/rand"
 )
 
-type Pbkdf2 struct {
+type Scrypt struct {
   name string
   description string
   pipeReader *io.PipeReader
   pipeWriter *io.PipeWriter
   usage *flags.Usage
-  hash func() hash.Hash
   flagSet *flag.FlagSet
-  options *Options
+  options *ScryptOptions
   salt []byte
   sync chan error
 }
 
-type Options struct {
+type ScryptOptions struct {
   saltIn string
   iter uint
   saltLen uint
   keyLen uint
 }
 
-var Command = New()
-
-func New() (*Pbkdf2) {
-  return &Pbkdf2{
-    name: "pbkdf2",
-    description: "Derive a key from input using the PBKDF2 algorithm",
-    usage: &flags.Usage{
-      CommandLine: "[-salt-in <filetype> | -salt-length <lenght>] [-key-lenght <length>] [-rounds <rounds>] [hash algorithm]",
-      Other: "Hash Algorithms:\n  sha1\n  sha256\n  sha512: default",
-    },
-    sync: make(chan error),
-  }
+var DefaultScrypt = &Scrypt{
+  name: "scrypt",
+  description: "Derive a key from input using the scrypt algorithm",
+  usage: &flags.Usage{
+    CommandLine: "[-salt-in <filetype> | -salt-length <lenght>] [-key-lenght <length>] [-rounds <rounds>]",
+    Other: "",
+  },
+  sync: make(chan error),
 }
 
-func (command *Pbkdf2) Init() (error) {
+func (command *Scrypt) Init() (error) {
   var (
     reader io.Reader
     writer io.WriteCloser
@@ -96,40 +87,45 @@ func (command *Pbkdf2) Init() (error) {
     iter := int(command.options.iter)
     keyLen := int(command.options.keyLen)
 
-    dk := pbkdf2.Key(data, command.salt, iter, keyLen, command.hash)
+    dk, err := scrypt.Key(data, command.salt, iter, 8, 1, keyLen)
+    if err != nil {
+      command.sync <- errors.Wrap(err, "Error generating key")
+      return
+    }
     buff := new(bytes.Buffer)
 
     buff.Write(command.salt)
     buff.Write(dk)
 
     io.Copy(writer, buff)
+
     command.sync <- writer.Close()
   }()
 
   return nil
 }
 
-func (command Pbkdf2) Usage() (*flags.Usage) {
+func (command Scrypt) Usage() (*flags.Usage) {
   return command.usage
 }
 
-func (command Pbkdf2) Name() (string) {
+func (command Scrypt) Name() (string) {
   return command.name
 }
 
-func (command Pbkdf2) Description() (string) {
+func (command Scrypt) Description() (string) {
   return command.description
 }
 
-func (command Pbkdf2) Read(p []byte) (int, error) {
+func (command Scrypt) Read(p []byte) (int, error) {
   return command.pipeReader.Read(p)
 }
 
-func (command Pbkdf2) Write(data []byte) (int, error) {
+func (command Scrypt) Write(data []byte) (int, error) {
   return command.pipeWriter.Write(data)
 }
 
-func (command Pbkdf2) Close() (error) {
+func (command Scrypt) Close() (error) {
   err := command.pipeWriter.Close()
   if err != nil {
     return err
@@ -138,38 +134,19 @@ func (command Pbkdf2) Close() (error) {
   return <- command.sync
 }
 
-func (command *Pbkdf2) SetupFlags(set *flag.FlagSet) {
+func (command *Scrypt) SetupFlags(set *flag.FlagSet) {
   command.flagSet = set
-  command.options = &Options{}
+  command.options = &ScryptOptions{}
 
-  set.StringVar(&command.options.saltIn, "salt-in", "", "If provided read from <filetype> instead of generating a new one. Mutualy exclusive with salt-length")
+  set.StringVar(&command.options.saltIn, "salt-in", "", "If provided use salt in hex format instead of generating a new one. Mutualy exclusive with salt-length")
   set.UintVar(&command.options.saltLen, "salt-length", 32, "Lenght of the generated salt in bytes. Mutualy exclusive with -salt")
-  set.UintVar(&command.options.iter, "rounds", 32768, "Number of interation for pbkdf2. Cannot go lower than 8192")
+  set.UintVar(&command.options.iter, "rounds", 32768, "Number of interation for scrypt. Cannot go lower than 16384")
   set.UintVar(&command.options.keyLen, "key-length", 32, "Lenght of the derivated key in bytes.")
 }
 
-func (command *Pbkdf2) ParseFlags() (error) {
-  hashFunction := ""
-
-  if command.flagSet.Parsed() {
-    hashFunction = command.flagSet.Arg(0)
-  }
-
-  switch hashFunction {
-    case "sha1":
-      command.hash = sha1.New
-    case "sha256":
-      command.hash = sha256.New
-    case "sha512":
-      command.hash = sha512.New
-    case "":
-      command.hash = sha512.New
-    default:
-      return flags.ErrBadFlag
-  }
-
-  if command.options.iter < 8192 {
-    return errors.New("Cannot have less than 8192 iterations")
+func (command *Scrypt) ParseFlags() (error) {
+  if command.options.iter < 16384 {
+    return errors.New("Cannot have less than 16384 iterations")
   }
 
   return nil

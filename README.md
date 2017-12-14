@@ -29,7 +29,6 @@ Input -> tee input -> decoders -> byte counter in -> tee command input -> comman
     - delimiter pipe `from input reset pipes everytime it hits the delimiter`
   - file types:
     - tls://\<addr>
-    - readline:\<EOF> `read lines from terminal's stdin util the word EOF is reached.`
     - tcp://\<addr> `read/write to tcp connection`
     - socket://\<path> `read/write to socket file`
     - ws://\<path> `read/write to http websocket`
@@ -189,4 +188,10 @@ Hash lines read from stdin
 
 ```
 cryptocli dgst -in readline:WORD -encoders hex
+```
+
+Execute nc -l 12344 which opens a tcp server and base64 the output
+
+```
+cryptocli pipe -encoders base64 nc -l 12344
 ```
