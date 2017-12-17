@@ -190,7 +190,7 @@ func (in PipeInput) Name() (string) {
   return in.name
 }
 
-func (out PipeOutput) Init() (error) {
+func (out *PipeOutput) Init() (error) {
   if out.command == "" {
     return errors.New("No command to pipe to stdout\n")
   }
