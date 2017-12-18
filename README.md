@@ -12,6 +12,7 @@ Input -> tee input -> decoders -> byte counter in -> tee command input -> comman
 
 ## Futur
 
+  - redo the README.md file
   - download x509 certificates from https
   - http/https/ssl-strip proxy
   - http/https/ws/wss servers
@@ -35,14 +36,13 @@ Input -> tee input -> decoders -> byte counter in -> tee command input -> comman
     - wss://\<path> `read/write to htts websocket`
     - fifo://\<path> `read/write to fifo file on filesystem`
     - scp://\<path> `copy from/to sshv2 server`
-    - s3://\<path> `copy from/to amazon s3`
     - kafka://\<host>/\<topic> `receive/send message to kafka`
   - commands
     - aes-256-cbc -key-in \<filetype> -derived-key-in \<filetype> -salt-pos 0 -salt-length 32 -salt-in \<filetype> -iv-in \<filetype> -iv-pos 32 -iv-length 32
     - nacl
     - ec
     - hmac
-    - compare # hashes 2 source of input then suble compare them. can specify hash function, doesn't use -in but uses 2 other options with no codec.
+    - dgst: add a -checksum-in and -checksum-decoders options. Dgst will verify the checksum when it is done reading.
   - codecs
     - delete-chars:`characters`
     - base58
@@ -114,6 +114,8 @@ FileTypes:
 	Read and unset environment variable. Doesn't work for output
   readline:
 	Read lines from stdin until WORD is reached.
+  s3://
+	Either upload or download from s3.
 ```
 
 ## Examples
@@ -194,4 +196,15 @@ Execute nc -l 12344 which opens a tcp server and base64 the output
 
 ```
 cryptocli pipe -encoders base64 nc -l 12344
+```
+
+Download an s3 object in a streaming fashion then gunzip it
+
+```
+cryptocli dd -in s3://bucket/path/to/key -decoders gzip -out key
+```
+
+Upload an s3 object, gzip it and write checksum
+```
+cryptocli dd -in file -encoders gzip -tee-out pipe:"cryptocli dgst -encoders hex -out file.checksum" -out s3://bucket/path/to/file
 ```

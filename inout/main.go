@@ -14,6 +14,7 @@ var (
     DefaultHttp,
     DefaultEnv,
     DefaultReadline,
+    DefaultS3,
   }
 )
 
@@ -80,6 +81,8 @@ func parse(inout string) (*url.URL, IO, error) {
       return uri, DefaultEnv, nil
     case "readline":
       return uri, DefaultReadline, nil
+    case "s3":
+      return uri, DefaultS3, nil
     default:
       return nil, nil, errors.Errorf("Error unknown type %s\n", uri.Scheme)
   }

@@ -190,7 +190,7 @@ func (in PipeInput) Name() (string) {
   return in.name
 }
 
-func (out PipeOutput) Init() (error) {
+func (out *PipeOutput) Init() (error) {
   if out.command == "" {
     return errors.New("No command to pipe to stdout\n")
   }
@@ -215,6 +215,7 @@ func (out PipeOutput) Init() (error) {
 
   go func() {
     io.Copy(stdin, out.pipeReader)
+    stdin.Close()
     out.sync <- out.cmd.Wait()
   }()
 
@@ -231,7 +232,7 @@ func (out PipeOutput) Close() (error) {
     return err
   }
 
-  return nil
+  return <- out.sync
 }
 
 func (out PipeOutput) Name() (string) {
