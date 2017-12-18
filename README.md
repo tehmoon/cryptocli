@@ -12,6 +12,7 @@ Input -> tee input -> decoders -> byte counter in -> tee command input -> comman
 
 ## Futur
 
+  - redo the README.md file
   - download x509 certificates from https
   - http/https/ssl-strip proxy
   - http/https/ws/wss servers
@@ -42,7 +43,7 @@ Input -> tee input -> decoders -> byte counter in -> tee command input -> comman
     - nacl
     - ec
     - hmac
-    - compare # hashes 2 source of input then suble compare them. can specify hash function, doesn't use -in but uses 2 other options with no codec.
+    - dgst: add a -checksum-in and -checksum-decoders options. Dgst will verify the checksum when it is done reading.
   - codecs
     - delete-chars:`characters`
     - base58
