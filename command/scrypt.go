@@ -144,7 +144,7 @@ func (command *Scrypt) SetupFlags(set *flag.FlagSet) {
   set.UintVar(&command.options.keyLen, "key-length", 32, "Lenght of the derivated key in bytes.")
 }
 
-func (command *Scrypt) ParseFlags() (error) {
+func (command *Scrypt) ParseFlags(options *flags.GlobalOptions) (error) {
   if command.options.iter < 16384 {
     return errors.New("Cannot have less than 16384 iterations")
   }

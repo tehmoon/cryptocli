@@ -1,53 +1,16 @@
 # cryptocli
-A modern tool to replace dd and openssl cli
+A modern tool to replace dd and openssl cli using a pipeline type data flow to move bytes around.
+
+You can read from many sources, write to many sources, decode, encode, stop a byte X, read from byte X, redirect data to many sources from different point on the pipeline and perform some command.
+
+It'll be your next swiss army knife for sure!
+
+Read the Usage for more explanations.
 
 ## Motivation
 I use decoding/encoding tools, dd and openssl all the time. It was getting a little bit annoying to have to use shell tricks to get what I wanted.
 
 Pull requests are of course welcome.
-
-## Internal data flow
-
-Input -> tee input -> decoders -> byte counter in -> tee command input -> command -> tee command output -> byte counter out -> encoders -> tee output -> output
-
-## Futur
-
-  - redo the README.md file
-  - download x509 certificates from https
-  - http/https/ssl-strip proxy
-  - http/https/ws/wss servers
-  - tcp/tls server
-  - cleanup the code
-  - code coverage
-  - unit tests
-  - go tool suite
-  - options:
-    - interval
-    - timeout
-    - loop
-    - err `redirect error`
-    - debug `redirect debug`
-    - delimiter pipe `from input reset pipes everytime it hits the delimiter`
-  - file types:
-    - tls://\<addr>
-    - tcp://\<addr> `read/write to tcp connection`
-    - socket://\<path> `read/write to socket file`
-    - ws://\<path> `read/write to http websocket`
-    - wss://\<path> `read/write to htts websocket`
-    - fifo://\<path> `read/write to fifo file on filesystem`
-    - scp://\<path> `copy from/to sshv2 server`
-    - kafka://\<host>/\<topic> `receive/send message to kafka`
-  - commands
-    - aes-256-cbc -key-in \<filetype> -derived-key-in \<filetype> -salt-pos 0 -salt-length 32 -salt-in \<filetype> -iv-in \<filetype> -iv-pos 32 -iv-length 32
-    - nacl
-    - ec
-    - hmac
-  - codecs
-    - delete-chars:`characters`
-    - base58
-    - decimal
-    - uint
-    - octal
 
 ## Usage
 
@@ -207,3 +170,46 @@ Upload an s3 object, gzip it and write checksum
 ```
 cryptocli dd -in file -encoders gzip -tee-out pipe:"cryptocli dgst -encoders hex -out file.checksum" -out s3://bucket/path/to/file
 ```
+
+## Internal data flow
+
+Input -> tee input -> decoders -> byte counter in -> tee command input -> command -> tee command output -> byte counter out -> encoders -> tee output -> output
+
+## Futur
+
+  - redo the README.md file
+  - download x509 certificates from https
+  - http/https/ssl-strip proxy
+  - http/https/ws/wss servers
+  - tcp/tls server
+  - cleanup the code
+  - code coverage
+  - unit tests
+  - go tool suite
+  - options:
+    - interval
+    - timeout
+    - loop
+    - err `redirect error`
+    - debug `redirect debug`
+    - delimiter pipe `from input reset pipes everytime it hits the delimiter`
+  - file types:
+    - tls://\<addr>
+    - tcp://\<addr> `read/write to tcp connection`
+    - socket://\<path> `read/write to socket file`
+    - ws://\<path> `read/write to http websocket`
+    - wss://\<path> `read/write to htts websocket`
+    - fifo://\<path> `read/write to fifo file on filesystem`
+    - scp://\<path> `copy from/to sshv2 server`
+    - kafka://\<host>/\<topic> `receive/send message to kafka`
+  - commands
+    - aes-256-cbc -key-in \<filetype> -derived-key-in \<filetype> -salt-pos 0 -salt-length 32 -salt-in \<filetype> -iv-in \<filetype> -iv-pos 32 -iv-length 32
+    - nacl
+    - ec
+    - hmac
+  - codecs
+    - delete-chars:`characters`
+    - base58
+    - decimal
+    - uint
+    - octal

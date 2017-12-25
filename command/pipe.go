@@ -133,6 +133,6 @@ func (command *Pipe) SetupFlags(set *flag.FlagSet) {
   command.flagSet = set
 }
 
-func (command *Pipe) ParseFlags() (error) {
+func (command *Pipe) ParseFlags(options *flags.GlobalOptions) (error) {
   return nil
 }

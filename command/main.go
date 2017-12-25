@@ -12,7 +12,7 @@ type Command interface {
   Name() (string)
   Description() (string)
   SetupFlags(*flag.FlagSet)
-  ParseFlags() (error)
+  ParseFlags(*flags.GlobalOptions) (error)
   Init() (error)
   Usage() (*flags.Usage)
 }

@@ -21,6 +21,7 @@ type GlobalOptions struct {
   TeeCmdIn inout.Output
   TeeCmdOut inout.Output
   TeeOut inout.Output
+  Chomp bool
 }
 
 func newGlobalOptions() (*GlobalOptions) {
