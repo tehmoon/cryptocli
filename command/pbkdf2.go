@@ -144,7 +144,7 @@ func (command *Pbkdf2) SetupFlags(set *flag.FlagSet) {
   set.UintVar(&command.options.keyLen, "key-length", 32, "Lenght of the derivated key in bytes.")
 }
 
-func (command *Pbkdf2) ParseFlags() (error) {
+func (command *Pbkdf2) ParseFlags(options *flags.GlobalOptions) (error) {
   hashFunction := ""
 
   if command.flagSet.Parsed() {

@@ -21,7 +21,7 @@ func main() {
   flag.CommandLine.Usage = flags.PrintUsage(cmd.Usage(), codec.CodecList, inout.InoutList)
 
   globalOptions := flags.ParseFlags(flag.CommandLine, globalFlags)
-  err := cmd.ParseFlags()
+  err := cmd.ParseFlags(globalOptions)
   if err != nil {
     fmt.Fprintln(os.Stderr, err.Error())
     flag.CommandLine.Usage()
@@ -98,7 +98,7 @@ func main() {
       os.Exit(1)
     }
 
-    globalOptions.Output.Chomp(globalFlags.Chomp)
+    globalOptions.Output.Chomp(globalOptions.Chomp)
 
     err = globalOptions.Output.Close()
     if err != nil {

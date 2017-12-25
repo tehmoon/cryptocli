@@ -153,6 +153,8 @@ func ParseFlags(set *flag.FlagSet, globalFlags *GlobalFlags) (*GlobalOptions) {
     globalOptions.ToByteOut += globalOptions.FromByteOut
   }
 
+  globalOptions.Chomp = globalFlags.Chomp
+
   return globalOptions
 }
 

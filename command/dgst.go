@@ -98,7 +98,7 @@ func (command *Dgst) SetupFlags(set *flag.FlagSet) {
   command.flagSet.StringVar(&command.options.checksumDecoders, "checksum-decoders", "hex", "Decoder checksum value when used with -checksum.")
 }
 
-func (command *Dgst) ParseFlags() (error) {
+func (command *Dgst) ParseFlags(options *flags.GlobalOptions) (error) {
   var (
     hashFunction string = ""
     decoders []codec.CodecDecoder

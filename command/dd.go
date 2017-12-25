@@ -54,6 +54,6 @@ func (command Dd) Close() (error) {
 }
 
 func (command Dd) SetupFlags(set *flag.FlagSet) {}
-func (command Dd) ParseFlags() (error) {
+func (command Dd) ParseFlags(options *flags.GlobalOptions) (error) {
   return nil
 }
