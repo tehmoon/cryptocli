@@ -42,7 +42,6 @@ Input -> tee input -> decoders -> byte counter in -> tee command input -> comman
     - nacl
     - ec
     - hmac
-    - dgst: add a -checksum-in and -checksum-decoders options. Dgst will verify the checksum when it is done reading.
   - codecs
     - delete-chars:`characters`
     - base58
