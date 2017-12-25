@@ -9,6 +9,7 @@ import (
   "io"
   "flag"
   "./command"
+  "./pipeline"
   "github.com/tehmoon/errors"
 )
 
@@ -56,13 +57,22 @@ func main() {
     }
   }
 
-  go func() {
-    err := globalOptions.Encoders[len(globalOptions.Encoders) - 1].Init()
+  encoders := pipeline.New()
+  for _, enc := range globalOptions.Encoders {
+    err := encoders.Add(enc)
     if err != nil {
       fmt.Fprintf(os.Stderr, errors.Wrap(err, "Err in setting up pipeline encoders").Error())
       os.Exit(1)
     }
+  }
 
+  err = encoders.Init()
+  if err != nil {
+    fmt.Fprintf(os.Stderr, errors.Wrap(err, "Err in intializing pipeline encoers").Error())
+    os.Exit(1)
+  }
+
+  go func() {
     err = globalOptions.Output.Init()
     if err != nil {
       fmt.Fprintf(os.Stderr, errors.Wrap(err, "Err initializing output").Error())
@@ -70,7 +80,7 @@ func main() {
     }
 
     var lastReader io.Reader
-    lastReader = globalOptions.Encoders[len(globalOptions.Encoders) - 1]
+    lastReader = encoders
 
     if globalOptions.TeeOut != nil {
       err = globalOptions.TeeOut.Init()
@@ -99,33 +109,6 @@ func main() {
     done <- struct{}{}
   }()
 
-  var encoderReader codec.CodecEncoder
-  encoderReader = globalOptions.Encoders[0]
-
-  for _, encoder := range globalOptions.Encoders[1:] {
-    go func(encoder codec.CodecEncoder, encoderReader codec.CodecEncoder) {
-      err := encoder.Init()
-      if err != nil {
-        fmt.Fprintf(os.Stderr, errors.Wrap(err, "Err in init encoder").Error())
-        os.Exit(1)
-      }
-
-      _, err = io.Copy(encoder, encoderReader)
-      if err != nil {
-        fmt.Fprintf(os.Stderr, errors.Wrap(err, "Err in reading reader").Error())
-        os.Exit(1)
-      }
-
-      err = encoder.Close()
-      if err != nil {
-        fmt.Fprintln(os.Stderr, err)
-        os.Exit(1)
-      }
-    }(encoder, encoderReader)
-
-    encoderReader = encoder
-  }
-
   if globalOptions.FromByteOut != 0 || globalOptions.ToByteOut != 0 {
     go func() {
        _, err := io.Copy(byteCounterOut, cmdOut)
@@ -141,70 +124,53 @@ func main() {
       }
     }()
 
-    go func(encoderReader codec.CodecEncoder) {
-       _, err = io.Copy(encoderReader, byteCounterOut)
+    go func() {
+       _, err = io.Copy(encoders, byteCounterOut)
       if err != nil {
         fmt.Fprintf(os.Stderr, errors.Wrap(err, "Err reading in byteCounterOut: %v").Error())
         os.Exit(1)
       }
 
-      err = encoderReader.Close()
+      err = encoders.Close()
       if err != nil {
         fmt.Fprintln(os.Stderr, err)
         os.Exit(1)
       }
-    }(globalOptions.Encoders[0])
+    }()
   } else {
-    go func(encoderReader codec.CodecEncoder) {
-       _, err = io.Copy(encoderReader, cmdOut)
+    go func() {
+       _, err = io.Copy(encoders, cmdOut)
       if err != nil {
         fmt.Fprintf(os.Stderr, errors.Wrap(err, "Err reading in encoderReader").Error())
         os.Exit(1)
       }
 
-      err = encoderReader.Close()
+      err = encoders.Close()
       if err != nil {
         fmt.Fprintln(os.Stderr, err)
         os.Exit(1)
       }
-    }(globalOptions.Encoders[0])
+    }()
   }
 
-  var decoderReader codec.CodecDecoder
-  decoderReader = globalOptions.Decoders[0]
+  decoders := pipeline.New()
+  for _, dec := range globalOptions.Decoders {
+    err := decoders.Add(dec)
+    if err != nil {
+      fmt.Fprintf(os.Stderr, errors.Wrap(err, "Err in setting up pipeline decoders").Error())
+      os.Exit(1)
+    }
+  }
 
-  for _, decoder := range globalOptions.Decoders[1:] {
-    go func(decoder codec.CodecDecoder, decoderReader codec.CodecDecoder) {
-      err := decoderReader.Init()
-      if err != nil {
-        fmt.Fprintf(os.Stderr, errors.Wrap(err, "Err in init decoder").Error())
-        os.Exit(1)
-      }
-
-      _, err = io.Copy(decoder, decoderReader)
-      if err != nil {
-        fmt.Fprintf(os.Stderr, errors.Wrap(err, "Err in reading decoder decoderReader").Error())
-        os.Exit(1)
-      }
-
-      err = decoder.Close()
-      if err != nil {
-        fmt.Fprintln(os.Stderr, err)
-        os.Exit(1)
-      }
-    }(decoder, decoderReader)
-
-    decoderReader = decoder
+  err = decoders.Init()
+  if err != nil {
+    fmt.Fprintf(os.Stderr, errors.Wrap(err, "Err in initializing pipeline decoders").Error())
+    os.Exit(1)
   }
 
   if globalOptions.FromByteIn != 0 || globalOptions.ToByteIn != 0 {
     go func() {
-      err := decoderReader.Init()
-      if err != nil {
-        fmt.Fprintf(os.Stderr, errors.Wrap(err, "Err in init decoder").Error())
-        os.Exit(1)
-      }
-       _, err = io.Copy(byteCounterIn, decoderReader)
+       _, err = io.Copy(byteCounterIn, decoders)
       if err != nil {
         fmt.Fprintf(os.Stderr, errors.Wrap(err, "Err reading in decoder").Error())
         os.Exit(1)
@@ -237,14 +203,8 @@ func main() {
       }
     }()
   } else {
-    go func(decoder codec.CodecDecoder) {
-      err := decoder.Init()
-      if err != nil {
-        fmt.Fprintf(os.Stderr, errors.Wrap(err, "Err in init decoder").Error())
-        os.Exit(1)
-      }
-
-      var cmdIn io.Reader = decoder
+    go func() {
+      var cmdIn io.Reader = decoders
 
       if globalOptions.TeeCmdIn != nil {
         cmdIn = io.TeeReader(cmdIn, globalOptions.TeeCmdIn)
@@ -261,7 +221,7 @@ func main() {
         fmt.Fprintln(os.Stderr, err)
         os.Exit(1)
       }
-    }(globalOptions.Decoders[len(globalOptions.Decoders) - 1])
+    }()
   }
 
   go func() {
@@ -269,7 +229,7 @@ func main() {
     if err != nil {
       if err == io.EOF {
         globalFlags.Chomp = true
-        globalOptions.Decoders[0].Close()
+        decoders.Close()
         return
       }
 
@@ -291,7 +251,7 @@ func main() {
       reader = io.TeeReader(globalOptions.Input, globalOptions.TeeIn)
     }
 
-    _, err = io.Copy(globalOptions.Decoders[0], reader)
+    _, err = io.Copy(decoders, reader)
     if err != nil {
       fmt.Fprintf(os.Stderr, errors.Wrap(err, "Error in decoding input").Error())
       os.Exit(1)
@@ -311,7 +271,7 @@ func main() {
       }
     }
 
-    err = globalOptions.Decoders[0].Close()
+    err = decoders.Close()
     if err != nil {
       fmt.Fprintln(os.Stderr, err)
       os.Exit(1)

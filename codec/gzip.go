@@ -27,30 +27,27 @@ func (codec Gzip) Description() (string) {
 type GzipDecoder struct {
   pipeReader *io.PipeReader
   pipeWriter *io.PipeWriter
-  gzipReader *gzip.Reader
+  reader *io.PipeReader
 }
 
 type GzipEncoder struct {
   pipeReader *io.PipeReader
   pipeWriter *io.PipeWriter
-  gzipWriter *gzip.Writer
+  writer *gzip.Writer
 }
 
 func (codec Gzip) Decoder(values url.Values) (CodecDecoder) {
   dec := &GzipDecoder{}
-  dec.pipeReader, dec.pipeWriter = io.Pipe()
   return dec
 }
 
 func (codec Gzip) Encoder(values url.Values) (CodecEncoder) {
   enc := &GzipEncoder{}
-  enc.pipeReader, enc.pipeWriter = io.Pipe()
-  enc.gzipWriter = gzip.NewWriter(enc.pipeWriter)
   return enc
 }
 
 func (dec *GzipDecoder) Read(p []byte) (int, error) {
-  return dec.gzipReader.Read(p)
+  return dec.reader.Read(p)
 }
 
 func (dec *GzipDecoder) Write(data []byte) (int, error) {
@@ -59,21 +56,34 @@ func (dec *GzipDecoder) Write(data []byte) (int, error) {
 
 func (dec *GzipDecoder) Init() (error) {
   var err error
-  dec.gzipReader, err = gzip.NewReader(dec.pipeReader)
+
+  dec.pipeReader, dec.pipeWriter = io.Pipe()
+  reader, writer := io.Pipe()
+  dec.reader = reader
+
+  go func() {
+    r, err := gzip.NewReader(dec.pipeReader)
+    if err != nil {
+      writer.CloseWithError(err)
+      return
+    }
+
+    io.Copy(writer, r)
+    r.Close()
+    writer.Close()
+  }()
+
   return err
 }
 
 func (dec *GzipDecoder) Close() (error) {
-  if dec.gzipReader != nil {
-    err := dec.gzipReader.Close()
-    if err != nil {
-      return err
-    }
-  }
   return dec.pipeWriter.Close()
 }
 
-func (enc GzipEncoder) Init() (error) {
+func (enc *GzipEncoder) Init() (error) {
+  enc.pipeReader, enc.pipeWriter = io.Pipe()
+  enc.writer = gzip.NewWriter(enc.pipeWriter)
+
   return nil
 }
 
@@ -82,11 +92,11 @@ func (enc *GzipEncoder) Read(p []byte) (int, error) {
 }
 
 func (enc *GzipEncoder) Write(data []byte) (int, error) {
-  return enc.gzipWriter.Write(data)
+  return enc.writer.Write(data)
 }
 
 func (enc *GzipEncoder) Close() (error) {
-  err := enc.gzipWriter.Close()
+  err := enc.writer.Close()
   if err != nil {
     return err
   }
