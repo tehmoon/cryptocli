@@ -129,6 +129,8 @@ func (command *Dgst) ParseFlags(options *flags.GlobalOptions) (error) {
     }
 
     if command.options.checksum != "" && decoders != nil {
+      options.Chomp = true
+
       pipe := pipeline.New()
       for _, dec := range decoders {
         err := pipe.Add(dec)
