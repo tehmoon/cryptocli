@@ -9,6 +9,7 @@ import (
   "io"
   "flag"
   "./command"
+  "github.com/tehmoon/errors"
 )
 
 func main() {
@@ -21,13 +22,14 @@ func main() {
   globalOptions := flags.ParseFlags(flag.CommandLine, globalFlags)
   err := cmd.ParseFlags()
   if err != nil {
+    fmt.Fprintln(os.Stderr, err.Error())
     flag.CommandLine.Usage()
     os.Exit(2)
   }
 
   err = cmd.Init()
   if err != nil {
-    fmt.Fprintf(os.Stderr, "Error initializing command: %s: %v", cmd.Name(), err)
+    fmt.Fprintf(os.Stderr, errors.Wrapf(err, "Error initializing command: %s", cmd.Name()).Error())
   }
 
   done := make(chan struct{})
@@ -39,7 +41,7 @@ func main() {
   if globalOptions.TeeCmdOut != nil {
     err := globalOptions.TeeCmdOut.Init()
     if err != nil {
-      fmt.Fprintf(os.Stderr, "Error initializing tee command output: %v", err)
+      fmt.Fprintf(os.Stderr, errors.Wrap(err, "Error initializing tee command output").Error())
       os.Exit(1)
     }
 
@@ -49,7 +51,7 @@ func main() {
   if globalOptions.TeeCmdIn != nil {
     err := globalOptions.TeeCmdIn.Init()
     if err != nil {
-      fmt.Fprintf(os.Stderr, "Error initializing tee command input: %v", err)
+      fmt.Fprintf(os.Stderr, errors.Wrap(err, "Error initializing tee command input").Error())
       os.Exit(1)
     }
   }
@@ -57,13 +59,13 @@ func main() {
   go func() {
     err := globalOptions.Encoders[len(globalOptions.Encoders) - 1].Init()
     if err != nil {
-      fmt.Fprintf(os.Stderr, "Err in init encoder: %v", err)
+      fmt.Fprintf(os.Stderr, errors.Wrap(err, "Err in setting up pipeline encoders").Error())
       os.Exit(1)
     }
 
     err = globalOptions.Output.Init()
     if err != nil {
-      fmt.Fprintf(os.Stderr, "Err initializing output: %v", err)
+      fmt.Fprintf(os.Stderr, errors.Wrap(err, "Err initializing output").Error())
       os.Exit(1)
     }
 
@@ -73,7 +75,7 @@ func main() {
     if globalOptions.TeeOut != nil {
       err = globalOptions.TeeOut.Init()
       if err != nil {
-        fmt.Fprintf(os.Stderr, "Err initializing output: %v", err)
+        fmt.Fprintf(os.Stderr, errors.Wrap(err, "Err initializing output").Error())
         os.Exit(1)
       }
 
@@ -82,7 +84,7 @@ func main() {
 
     _, err = io.Copy(globalOptions.Output, lastReader)
     if err != nil {
-      fmt.Fprintf(os.Stderr, "Err in reading encoder: %v", err)
+      fmt.Fprintf(os.Stderr, errors.Wrap(err, "Err in reading encoder").Error())
       os.Exit(1)
     }
 
@@ -90,7 +92,7 @@ func main() {
 
     err = globalOptions.Output.Close()
     if err != nil {
-      fmt.Fprintf(os.Stderr, "Err closing output: %v", err)
+      fmt.Fprintf(os.Stderr, errors.Wrap(err, "Err closing output").Error())
       os.Exit(1)
     }
 
@@ -104,13 +106,13 @@ func main() {
     go func(encoder codec.CodecEncoder, encoderReader codec.CodecEncoder) {
       err := encoder.Init()
       if err != nil {
-        fmt.Fprintf(os.Stderr, "Err in init encoder: %v", err)
+        fmt.Fprintf(os.Stderr, errors.Wrap(err, "Err in init encoder").Error())
         os.Exit(1)
       }
 
       _, err = io.Copy(encoder, encoderReader)
       if err != nil {
-        fmt.Fprintf(os.Stderr, "Err in reading reader: %v", err)
+        fmt.Fprintf(os.Stderr, errors.Wrap(err, "Err in reading reader").Error())
         os.Exit(1)
       }
 
@@ -128,7 +130,7 @@ func main() {
     go func() {
        _, err := io.Copy(byteCounterOut, cmdOut)
       if err != nil {
-        fmt.Fprintf(os.Stderr, "Err reading in command: %v", err)
+        fmt.Fprintf(os.Stderr, errors.Wrap(err, "Err reading in command").Error())
         os.Exit(1)
       }
 
@@ -142,7 +144,7 @@ func main() {
     go func(encoderReader codec.CodecEncoder) {
        _, err = io.Copy(encoderReader, byteCounterOut)
       if err != nil {
-        fmt.Fprintf(os.Stderr, "Err reading in byteCounterOut: %v", err)
+        fmt.Fprintf(os.Stderr, errors.Wrap(err, "Err reading in byteCounterOut: %v").Error())
         os.Exit(1)
       }
 
@@ -156,7 +158,7 @@ func main() {
     go func(encoderReader codec.CodecEncoder) {
        _, err = io.Copy(encoderReader, cmdOut)
       if err != nil {
-        fmt.Fprintf(os.Stderr, "Err reading in encoderReader: %v", err)
+        fmt.Fprintf(os.Stderr, errors.Wrap(err, "Err reading in encoderReader").Error())
         os.Exit(1)
       }
 
@@ -175,13 +177,13 @@ func main() {
     go func(decoder codec.CodecDecoder, decoderReader codec.CodecDecoder) {
       err := decoderReader.Init()
       if err != nil {
-        fmt.Fprintf(os.Stderr, "Err in init decoder: %v", err)
+        fmt.Fprintf(os.Stderr, errors.Wrap(err, "Err in init decoder").Error())
         os.Exit(1)
       }
 
       _, err = io.Copy(decoder, decoderReader)
       if err != nil {
-        fmt.Fprintf(os.Stderr, "Err in reading decoder decoderReader: %v", err)
+        fmt.Fprintf(os.Stderr, errors.Wrap(err, "Err in reading decoder decoderReader").Error())
         os.Exit(1)
       }
 
@@ -199,12 +201,12 @@ func main() {
     go func() {
       err := decoderReader.Init()
       if err != nil {
-        fmt.Fprintf(os.Stderr, "Err in init decoder: %v", err)
+        fmt.Fprintf(os.Stderr, errors.Wrap(err, "Err in init decoder").Error())
         os.Exit(1)
       }
        _, err = io.Copy(byteCounterIn, decoderReader)
       if err != nil {
-        fmt.Fprintf(os.Stderr, "Err reading in decoder: %v", err)
+        fmt.Fprintf(os.Stderr, errors.Wrap(err, "Err reading in decoder").Error())
         os.Exit(1)
       }
 
@@ -224,7 +226,7 @@ func main() {
 
        _, err := io.Copy(cmd, cmdIn)
       if err != nil {
-        fmt.Fprintf(os.Stderr, "Err reading in byteCounterIn: %v", err)
+        fmt.Fprintf(os.Stderr, errors.Wrap(err, "Err reading in byteCounterIn").Error())
         os.Exit(1)
       }
 
@@ -238,7 +240,7 @@ func main() {
     go func(decoder codec.CodecDecoder) {
       err := decoder.Init()
       if err != nil {
-        fmt.Fprintf(os.Stderr, "Err in init decoder: %v", err)
+        fmt.Fprintf(os.Stderr, errors.Wrap(err, "Err in init decoder").Error())
         os.Exit(1)
       }
 
@@ -250,7 +252,7 @@ func main() {
 
       _, err = io.Copy(cmd, cmdIn)
       if err != nil {
-        fmt.Fprintf(os.Stderr, "Err in reading decoder decoderReader: %v", err)
+        fmt.Fprintf(os.Stderr, errors.Wrap(err, "Err in reading decoder decoderReader").Error())
         os.Exit(1)
       }
 
@@ -271,7 +273,7 @@ func main() {
         return
       }
 
-      fmt.Fprintf(os.Stderr, "Error initializing input: %v", err)
+      fmt.Fprintf(os.Stderr, errors.Wrap(err, "Error initializing input").Error())
       os.Exit(1)
     }
 
@@ -282,7 +284,7 @@ func main() {
     if globalOptions.TeeIn != nil {
       err := globalOptions.TeeIn.Init()
       if err != nil {
-        fmt.Fprintf(os.Stderr, "Error initializing tee input: %v", err)
+        fmt.Fprintf(os.Stderr, errors.Wrap(err, "Error initializing tee input").Error())
         os.Exit(1)
       }
 
@@ -291,7 +293,7 @@ func main() {
 
     _, err = io.Copy(globalOptions.Decoders[0], reader)
     if err != nil {
-      fmt.Fprintf(os.Stderr, "Error in decoding input: %v", err)
+      fmt.Fprintf(os.Stderr, errors.Wrap(err, "Error in decoding input").Error())
       os.Exit(1)
     }
 
