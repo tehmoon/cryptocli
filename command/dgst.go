@@ -4,6 +4,7 @@ import (
   "io"
   "crypto/subtle"
   "flag"
+  "crypto/sha1"
   "crypto/sha256"
   "crypto/sha512"
   "hash"
@@ -13,6 +14,8 @@ import (
   "github.com/tehmoon/errors"
   "strings"
   "../pipeline"
+  "golang.org/x/crypto/blake2b"
+  "golang.org/x/crypto/sha3"
 )
 
 type Dgst struct {
@@ -37,7 +40,7 @@ var DefaultDgst = &Dgst{
   description: "Hash the content of stdin",
   usage: &flags.Usage{
     CommandLine: "<hash algorithm>",
-    Other: "Hash Algorithms:\n  sha256\n  sha512",
+    Other: "Hash Algorithms:\n  sha1\n  sha256\n  sha512\n  blake2b-256\n  blake2b-384\n  blake2b-512\n  sha3-224\n  sha3-256\n  sha3-384\n  sha3-512",
   },
   options: DgstOptions{},
 }
@@ -154,10 +157,26 @@ func (command *Dgst) ParseFlags() (error) {
   }
 
   switch hashFunction {
+    case "sha1":
+      command.hash = sha1.New()
     case "sha256":
       command.hash = sha256.New()
     case "sha512":
       command.hash = sha512.New()
+    case "blake2b-256":
+      command.hash, _  = blake2b.New(blake2b.Size256, nil)
+    case "blake2b-384":
+      command.hash, _ = blake2b.New(blake2b.Size384, nil)
+    case "blake2b-512":
+      command.hash, _ = blake2b.New(blake2b.Size, nil)
+    case "sha3-224":
+      command.hash = sha3.New224()
+    case "sha3-256":
+      command.hash = sha3.New256()
+    case "sha3-384":
+      command.hash = sha3.New384()
+    case "sha3-512":
+      command.hash = sha3.New512()
     case "":
       command.hash = sha512.New()
     default:
