@@ -1,7 +1,7 @@
 # cryptocli
 A modern tool to replace dd and openssl cli using a pipeline type data flow to move bytes around.
 
-You can read from many sources, write to many sources, decode, encode, stop a byte X, read from byte X, redirect data to many sources from different point on the pipeline and perform some command.
+You can read from many sources, write to many sources, decode, encode, stop a byte X, read from byte X, redirect data to many sources from different points on the pipeline, and perform some commands.
 
 It'll be your next swiss army knife for sure!
 
@@ -11,6 +11,11 @@ Read the Usage for more explanations.
 I use decoding/encoding tools, dd and openssl all the time. It was getting a little bit annoying to have to use shell tricks to get what I wanted.
 
 Pull requests are of course welcome.
+
+## Setup
+See [installDependencies.sh](installDependences.sh).
+
+Use per usual Go package usage/compilation/installation.
 
 ## Usage
 
