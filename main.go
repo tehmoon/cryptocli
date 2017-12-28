@@ -129,14 +129,14 @@ func main() {
   for _, enc := range globalOptions.Encoders {
     err := encoders.Add(enc)
     if err != nil {
-      fmt.Fprintf(os.Stderr, errors.Wrap(err, "Err in setting up pipeline encoders").Error())
+      fmt.Fprintf(os.Stderr, errors.Wrap(err, "Err in setting up pipeline -encoders").Error())
       os.Exit(1)
     }
   }
 
   err = encoders.Init()
   if err != nil {
-    fmt.Fprintf(os.Stderr, errors.Wrap(err, "Err in intializing pipeline encoers").Error())
+    fmt.Fprintf(os.Stderr, errors.Wrap(err, "Err in intializing pipeline -encoders").Error())
     os.Exit(1)
   }
 
@@ -253,7 +253,7 @@ func main() {
     go func() {
        _, err = io.Copy(byteCounterIn, decoders)
       if err != nil {
-        fmt.Fprintf(os.Stderr, errors.Wrap(err, "Err reading in decoder").Error())
+        fmt.Fprintf(os.Stderr, errors.Wrap(err, "Error reading from -decoders").Error())
         os.Exit(1)
       }
 

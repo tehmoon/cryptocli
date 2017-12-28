@@ -6,7 +6,7 @@ import (
   "flag"
   "os"
   "math/big"
-  "github.com/pkg/errors"
+  "github.com/tehmoon/errors"
   "strings"
   "../inout"
   "../filter"
