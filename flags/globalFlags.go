@@ -9,6 +9,7 @@ import (
   "github.com/pkg/errors"
   "strings"
   "../inout"
+  "../filter"
 )
 
 type GlobalFlags struct {
@@ -21,6 +22,10 @@ type GlobalFlags struct {
   ToByteOut string
   In string
   Out string
+  FiltersIn string
+  FiltersCmdIn string
+  FiltersCmdOut string
+  FiltersOut string
   TeeIn string
   TeeCmdIn string
   TeeCmdOut string
@@ -35,6 +40,38 @@ func ParseFlags(set *flag.FlagSet, globalFlags *GlobalFlags) (*GlobalOptions) {
   set.Parse(os.Args[2:])
 
   var err error
+
+  if globalFlags.FiltersIn != "" {
+    globalOptions.FiltersIn, err = filter.ParseAll(globalFlags.FiltersIn)
+    if err != nil {
+      fmt.Fprintf(os.Stderr, errors.Wrap(err, "Error parsing -filters-in").Error())
+      os.Exit(2)
+    }
+  }
+
+  if globalFlags.FiltersCmdIn != "" {
+    globalOptions.FiltersCmdIn, err = filter.ParseAll(globalFlags.FiltersCmdIn)
+    if err != nil {
+      fmt.Fprintf(os.Stderr, errors.Wrap(err, "Error parsing -filters-cmd-in").Error())
+      os.Exit(2)
+    }
+  }
+
+  if globalFlags.FiltersCmdOut != "" {
+    globalOptions.FiltersCmdOut, err = filter.ParseAll(globalFlags.FiltersCmdOut)
+    if err != nil {
+      fmt.Fprintf(os.Stderr, errors.Wrap(err, "Error parsing -filters-cmd-out").Error())
+      os.Exit(2)
+    }
+  }
+
+  if globalFlags.FiltersOut != "" {
+    globalOptions.FiltersOut, err = filter.ParseAll(globalFlags.FiltersOut)
+    if err != nil {
+      fmt.Fprintf(os.Stderr, errors.Wrap(err, "Error parsing -filters-out").Error())
+      os.Exit(2)
+    }
+  }
 
   if globalFlags.TeeIn != "" {
     globalOptions.TeeIn, err = inout.ParseOutput(globalFlags.TeeIn)
@@ -174,6 +211,10 @@ func SetupFlags(set *flag.FlagSet) (*GlobalFlags) {
   set.StringVar(&globalFlags.TeeCmdIn, "tee-cmd-in", "", "Copy output after -decoders and before <command> to <fileType>")
   set.StringVar(&globalFlags.TeeCmdOut, "tee-cmd-out", "", "Copy output after <command> and before -encoders to <fileType>")
   set.StringVar(&globalFlags.TeeOut, "tee-out", "", "Copy output after -encoders to <fileType>")
+  set.StringVar(&globalFlags.FiltersIn, "filters-in", "", "List of <filter> in URL format that filters data right before -decoders")
+  set.StringVar(&globalFlags.FiltersCmdIn, "filters-cmd-in", "", "List of <filter> in URL format that filters data right after -decoders")
+  set.StringVar(&globalFlags.FiltersCmdOut, "filters-cmd-out", "", "List of <filter> in URL format that filters data right before -encoders")
+  set.StringVar(&globalFlags.FiltersOut, "filters-out", "", "List of <filter> in URL format that filters data right after -encoders")
 
   return globalFlags
 }

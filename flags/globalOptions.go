@@ -3,6 +3,7 @@ package flags
 import (
   "../codec"
   "../inout"
+  "../filter"
 )
 
 type GlobalOptions struct {
@@ -17,6 +18,10 @@ type GlobalOptions struct {
   Bs int
   Ibs int
   Obs int
+  FiltersIn []filter.Filter
+  FiltersCmdIn []filter.Filter
+  FiltersCmdOut []filter.Filter
+  FiltersOut []filter.Filter
   TeeIn inout.Output
   TeeCmdIn inout.Output
   TeeCmdOut inout.Output
@@ -25,7 +30,12 @@ type GlobalOptions struct {
 }
 
 func newGlobalOptions() (*GlobalOptions) {
-  globalOptions := &GlobalOptions{}
+  globalOptions := &GlobalOptions{
+    FiltersIn: make([]filter.Filter, 0),
+    FiltersCmdIn: make([]filter.Filter, 0),
+    FiltersCmdOut: make([]filter.Filter, 0),
+    FiltersOut: make([]filter.Filter, 0),
+  }
 
   cv, _ := codec.Parse("binary")
   globalOptions.Decoders = []codec.CodecDecoder{cv.Codec.Decoder(cv.Values),}

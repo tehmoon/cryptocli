@@ -11,6 +11,7 @@ import (
   "./command"
   "./pipeline"
   "github.com/tehmoon/errors"
+  "./filter"
 )
 
 func main() {
@@ -18,7 +19,7 @@ func main() {
   globalFlags := flags.SetupFlags(flag.CommandLine)
   cmd.SetupFlags(flag.CommandLine)
 
-  flag.CommandLine.Usage = flags.PrintUsage(cmd.Usage(), codec.CodecList, inout.InoutList)
+  flag.CommandLine.Usage = flags.PrintUsage(cmd.Usage(), codec.CodecList, inout.InoutList, filter.FilterList)
 
   globalOptions := flags.ParseFlags(flag.CommandLine, globalFlags)
   err := cmd.ParseFlags(globalOptions)
@@ -37,7 +38,74 @@ func main() {
   byteCounterIn := newByteCounter(globalOptions.FromByteIn, globalOptions.ToByteIn)
   byteCounterOut := newByteCounter(globalOptions.FromByteOut, globalOptions.ToByteOut)
 
-  var cmdOut io.Reader = cmd
+  filtersIn := pipeline.New()
+  filtersCmdIn := pipeline.New()
+  filtersCmdOut := pipeline.New()
+  filtersOut := pipeline.New()
+
+  if len(globalOptions.FiltersIn) != 0 {
+    for _, f := range globalOptions.FiltersIn {
+      filtersIn.Add(f)
+    }
+  }
+
+  if len(globalOptions.FiltersCmdIn) != 0 {
+    for _, f := range globalOptions.FiltersCmdIn {
+      filtersCmdIn.Add(f)
+    }
+  }
+
+  if len(globalOptions.FiltersCmdOut) != 0 {
+    for _, f := range globalOptions.FiltersCmdOut {
+      filtersCmdOut.Add(f)
+    }
+  }
+
+  if len(globalOptions.FiltersOut) != 0 {
+    for _, f := range globalOptions.FiltersOut {
+      filtersOut.Add(f)
+    }
+  }
+
+  err = filtersIn.Init()
+  if err != nil {
+    fmt.Fprintf(os.Stderr, errors.Wrap(err, "Error intializing filters-in").Error())
+    os.Exit(1)
+  }
+
+  err = filtersCmdIn.Init()
+  if err != nil {
+    fmt.Fprintf(os.Stderr, errors.Wrap(err, "Error intializing filters-cmd-in").Error())
+    os.Exit(1)
+  }
+
+  err = filtersCmdOut.Init()
+  if err != nil {
+    fmt.Fprintf(os.Stderr, errors.Wrap(err, "Error intializing filters-cmd-out").Error())
+    os.Exit(1)
+  }
+
+  err = filtersOut.Init()
+  if err != nil {
+    fmt.Fprintf(os.Stderr, errors.Wrap(err, "Error intializing filters-out").Error())
+    os.Exit(1)
+  }
+
+  go func() {
+    _, err := io.Copy(filtersCmdOut, cmd)
+    if err != nil {
+      fmt.Fprintf(os.Stderr, errors.Wrap(err, "Error reading from command").Error())
+      os.Exit(1)
+    }
+
+    err = filtersCmdOut.Close()
+    if err != nil {
+      fmt.Fprintf(os.Stderr, errors.Wrap(err, "Error closing command").Error())
+      os.Exit(1)
+    }
+  }()
+
+  var cmdOut io.Reader = filtersCmdOut
 
   if globalOptions.TeeCmdOut != nil {
     err := globalOptions.TeeCmdOut.Init()
@@ -46,7 +114,7 @@ func main() {
       os.Exit(1)
     }
 
-    cmdOut = io.TeeReader(cmd, globalOptions.TeeCmdOut)
+    cmdOut = io.TeeReader(filtersCmdOut, globalOptions.TeeCmdOut)
   }
 
   if globalOptions.TeeCmdIn != nil {
@@ -73,14 +141,27 @@ func main() {
   }
 
   go func() {
+    _, err := io.Copy(filtersOut, encoders)
+    if err != nil {
+      fmt.Fprintf(os.Stderr, errors.Wrap(err, "Error in reading from -encoders").Error())
+      os.Exit(1)
+    }
+
+    err = filtersOut.Close()
+    if err != nil {
+      fmt.Fprintf(os.Stderr, errors.Wrap(err, "Error in closing -filters-out").Error())
+      os.Exit(1)
+    }
+  }()
+
+  go func() {
     err = globalOptions.Output.Init()
     if err != nil {
       fmt.Fprintf(os.Stderr, errors.Wrap(err, "Err initializing output").Error())
       os.Exit(1)
     }
 
-    var lastReader io.Reader
-    lastReader = encoders
+    var lastReader io.Reader = filtersOut
 
     if globalOptions.TeeOut != nil {
       err = globalOptions.TeeOut.Init()
@@ -184,7 +265,21 @@ func main() {
     }()
 
     go func() {
-      var cmdIn io.Reader = byteCounterIn
+      _, err := io.Copy(filtersCmdIn, byteCounterIn)
+      if err != nil {
+        fmt.Fprintf(os.Stderr, errors.Wrap(err, "Error reading from -decoders").Error())
+        os.Exit(1)
+      }
+
+      err = filtersCmdIn.Close()
+      if err != nil {
+        fmt.Fprintf(os.Stderr, errors.Wrap(err, "Error closing -filters-cmd-in").Error())
+        os.Exit(1)
+      }
+    }()
+
+    go func() {
+      var cmdIn io.Reader = filtersCmdIn
 
       if globalOptions.TeeCmdIn != nil {
         cmdIn = io.TeeReader(cmdIn, globalOptions.TeeCmdIn)
@@ -204,7 +299,21 @@ func main() {
     }()
   } else {
     go func() {
-      var cmdIn io.Reader = decoders
+      _, err := io.Copy(filtersCmdIn, decoders)
+      if err != nil {
+        fmt.Fprintf(os.Stderr, errors.Wrap(err, "Error reading from -decoders").Error())
+        os.Exit(1)
+      }
+
+      err = filtersCmdIn.Close()
+      if err != nil {
+        fmt.Fprintf(os.Stderr, errors.Wrap(err, "Error closing -filters-cmd-in").Error())
+        os.Exit(1)
+      }
+    }()
+
+    go func() {
+      var cmdIn io.Reader = filtersCmdIn
 
       if globalOptions.TeeCmdIn != nil {
         cmdIn = io.TeeReader(cmdIn, globalOptions.TeeCmdIn)
@@ -237,9 +346,27 @@ func main() {
       os.Exit(1)
     }
 
-    var reader io.Reader
+    _, err = io.Copy(filtersIn, globalOptions.Input)
+    if err != nil {
+      fmt.Fprintf(os.Stderr, errors.Wrap(err, "Error in reading -in").Error())
+      os.Exit(1)
+    }
 
-    reader = globalOptions.Input
+    err = globalOptions.Input.Close()
+    if err != nil {
+      fmt.Fprintf(os.Stderr, errors.Wrap(err, "Error in closing -in").Error())
+      os.Exit(1)
+    }
+
+    err = filtersIn.Close()
+    if err != nil {
+      fmt.Fprintf(os.Stderr, errors.Wrap(err, "Error in closing filters-in").Error())
+      os.Exit(1)
+    }
+  }()
+
+  go func() {
+    var reader io.Reader = filtersIn
 
     if globalOptions.TeeIn != nil {
       err := globalOptions.TeeIn.Init()
@@ -248,18 +375,12 @@ func main() {
         os.Exit(1)
       }
 
-      reader = io.TeeReader(globalOptions.Input, globalOptions.TeeIn)
+      reader = io.TeeReader(filtersIn, globalOptions.TeeIn)
     }
 
     _, err = io.Copy(decoders, reader)
     if err != nil {
       fmt.Fprintf(os.Stderr, errors.Wrap(err, "Error in decoding input").Error())
-      os.Exit(1)
-    }
-
-    err = globalOptions.Input.Close()
-    if err != nil {
-      fmt.Fprintln(os.Stderr, err)
       os.Exit(1)
     }
 

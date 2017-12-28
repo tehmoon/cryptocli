@@ -5,6 +5,7 @@ import (
   "flag"
   "../codec"
   "../inout"
+  "../filter"
   "fmt"
 )
 
@@ -13,7 +14,7 @@ type Usage struct {
   Other string
 }
 
-func PrintUsage(usage *Usage, codecList []codec.Codec, inoutList []inout.IO) (func ()) {
+func PrintUsage(usage *Usage, codecList []codec.Codec, inoutList []inout.IO, filterList []filter.Initializer) (func ()) {
   return func() {
     fmt.Fprintf(os.Stderr, "Usage: %s [<Options>] %s\n\nOptions:\n", os.Args[0], usage.CommandLine)
     flag.PrintDefaults()
@@ -28,6 +29,13 @@ func PrintUsage(usage *Usage, codecList []codec.Codec, inoutList []inout.IO) (fu
       fmt.Fprintln(os.Stderr, "\nFileTypes:")
       for _, i := range inoutList {
         fmt.Fprintf(os.Stderr, "  %s\n\t%s\n", i.Name(), i.Description())
+      }
+    }
+
+    if len(filter.FilterList) > 0 {
+      fmt.Fprintln(os.Stderr, "\nFilters:")
+      for _, f := range filterList {
+        fmt.Fprintf(os.Stderr, "  %s\n\t%s\n", f.Name(), f.Description())
       }
     }
 
