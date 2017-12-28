@@ -7,6 +7,14 @@
 
 
 # CODE
+if [ ! -d github.com]
+then
+	mkdir github.com
+fi
+exit
+
+cd github.com
+
 mkdir aws
 cd aws
 git clone https://github.com/aws/aws-sdk-go.git
@@ -20,5 +28,7 @@ cd ..
 mkdir tehmoon
 cd tehmoon
 git clone https://github.com/tehmoon/errors.git
+
+cd ..
 
 go get golang.org/x/crypto/blake2b
