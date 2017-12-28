@@ -28,6 +28,14 @@ Options:
     	Set a list of codecs separated by ',' to decode input that will be process in the order given (default "binary")
   -encoders string
     	Set a list of codecs separated by ',' to encode output that will be process in the order given (default "binary")
+  -filters-cmd-in string
+    	List of <filter> in URL format that filters data right after -decoders
+  -filters-cmd-out string
+    	List of <filter> in URL format that filters data right before -encoders
+  -filters-in string
+    	List of <filter> in URL format that filters data right before -decoders
+  -filters-out string
+    	List of <filter> in URL format that filters data right after -encoders
   -from-byte-in string
     	Skip the first x bytes of stdin. Use 0X/0x for base 16, 0b/0B for base 2, 0 for base8 otherwise base 10
   -from-byte-out string
@@ -78,6 +86,10 @@ FileTypes:
 	Read lines from stdin until WORD is reached.
   s3://
 	Either upload or download from s3.
+
+Filters:
+  pem
+	Filter PEM objects. Options: type=<PEM type> start-at=<number> stop-at=<number>. Type will filter only PEM objects with this type. Start-at will discard the first <number> PEM objects. Stop-at will stop at PEM object <number>.
 ```
 
 ## Examples
@@ -167,13 +179,21 @@ cryptocli dd -in s3://bucket/path/to/key -decoders gzip -out key
 ```
 
 Upload an s3 object, gzip it and write checksum
+
 ```
 cryptocli dd -in file -encoders gzip -tee-out pipe:"cryptocli dgst -encoders hex -out file.checksum" -out s3://bucket/path/to/file
 ```
 
+Filter only PEM objects of type certificate
+
+```
+cryptocli pipe -filters-cmd-out pem:type=certificate openssl s_client -connect google.com:443
+```
+
+
 ## Internal data flow
 
-Input -> tee input -> decoders -> byte counter in -> tee command input -> command -> tee command output -> byte counter out -> encoders -> tee output -> output
+Input -> filters-in -> tee input -> decoders -> byte counter in -> filters-cmd-in -> tee command input -> command -> filters-cmd-out -> tee command output -> byte counter out -> encoders -> filters-out -> tee output -> output
 
 ## Futur
 
@@ -208,6 +228,7 @@ Input -> tee input -> decoders -> byte counter in -> tee command input -> comman
     - ec
     - hmac
   - codecs
+    - pem
     - delete-chars:`characters`
     - base58
     - decimal

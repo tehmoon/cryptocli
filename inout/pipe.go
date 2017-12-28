@@ -4,7 +4,7 @@ import (
   "os"
   "net/url"
   "io"
-  "github.com/pkg/errors"
+  "github.com/tehmoon/errors"
   "runtime"
   "os/exec"
 )
@@ -31,7 +31,6 @@ func (p Pipe) In(uri *url.URL) (Input) {
   input := &PipeInput{
     command: command,
     name: "pipe-input",
-    sync: make(chan error),
   }
 
   input.pipeReader, input.pipeWriter = io.Pipe()
@@ -56,7 +55,6 @@ func (p Pipe) Out(uri *url.URL) (Output) {
   output := &PipeOutput{
     command: command,
     name: "pipe-output",
-    sync: make(chan error),
   }
 
   output.pipeReader, output.pipeWriter = io.Pipe()
@@ -71,6 +69,7 @@ type PipeInput struct {
   cmd *exec.Cmd
   name string
   sync chan error
+  doneReading chan struct{}
 }
 
 type PipeOutput struct {
@@ -150,6 +149,8 @@ func (in *PipeInput) Init() (error) {
     return errors.New("No command to pipe to stdout\n")
   }
 
+  in.doneReading = make(chan struct{})
+  in.sync = make(chan error)
   shell := pipeGetShell()
 
   ok := pipeCheckOS()
@@ -165,21 +166,41 @@ func (in *PipeInput) Init() (error) {
   in.cmd = cmd
 
   go func() {
-    io.Copy(os.Stderr, stderr)
+    io.Copy(os.Stdout, stderr)
   }()
 
   go func() {
-    io.Copy(in.pipeWriter, stdout)
+    var e error
 
-    in.pipeWriter.Close()
-    in.sync <- in.cmd.Wait()
+    _, err := io.Copy(in.pipeWriter, stdout)
+    if err != nil {
+      e = errors.WrapErr(e, err)
+    }
+
+    err = in.pipeWriter.Close()
+    if err != nil {
+      e = errors.WrapErr(e, err)
+    }
+
+    err = in.cmd.Wait()
+    if err != nil {
+      e = errors.WrapErr(e, err)
+    }
+
+    <- in.doneReading
+    in.sync <- e
   }()
 
   return nil
 }
 
 func (in *PipeInput) Read(p []byte) (int, error) {
-  return in.pipeReader.Read(p)
+  i, err := in.pipeReader.Read(p)
+  if err != nil {
+    in.doneReading <- struct{}{}
+  }
+
+  return i, err
 }
 
 func (in *PipeInput) Close() (error) {
@@ -195,6 +216,7 @@ func (out *PipeOutput) Init() (error) {
     return errors.New("No command to pipe to stdout\n")
   }
 
+  out.sync = make(chan error)
   shell := pipeGetShell()
 
   ok := pipeCheckOS()

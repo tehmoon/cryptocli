@@ -68,8 +68,8 @@ func initElements(elems []Element) (error) {
     go func(elem Element, wg *sync.WaitGroup) {
       err := elem.Init()
       if err != nil {
-        elem.Close()
-        return
+        fmt.Fprintln(os.Stderr, errors.Wrapf(err, "Error initializing element %T in pipeline", elem).Error())
+        os.Exit(1)
       }
 
       wg.Done()
@@ -88,11 +88,15 @@ func ioCopyElements(input io.Reader, output io.WriteCloser, elems []Element) (er
     go func(elem Element, reader io.Reader) {
       _, err := io.Copy(elem, reader)
       if err != nil {
-        fmt.Printf("Error in copying element %T in pipeline: %v", reader, err)
+        fmt.Fprintln(os.Stderr, errors.Wrapf(err, "Error in copying element %T in pipeline", reader).Error())
         os.Exit(1)
       }
 
-      elem.Close()
+      err = elem.Close()
+      if err != nil {
+        fmt.Fprintln(os.Stderr, errors.Wrap(err, "Error closing pipeline").Error())
+        os.Exit(1)
+      }
     }(elem, next)
 
     next = elem
@@ -101,11 +105,15 @@ func ioCopyElements(input io.Reader, output io.WriteCloser, elems []Element) (er
   go func(writer io.WriteCloser, reader io.Reader) {
     _, err := io.Copy(writer, reader)
     if err != nil {
-      fmt.Printf("Error in copying element %T in pipeline: %v", writer, err)
+      fmt.Fprintln(os.Stderr, errors.Wrapf(err, "Error in copying element %T in pipeline", writer).Error())
       os.Exit(1)
     }
 
-    writer.Close()
+    err = writer.Close()
+    if err != nil {
+      fmt.Fprintln(os.Stderr, errors.Wrap(err, "Error closing pipeline").Error())
+      os.Exit(1)
+    }
   }(output, next)
 
   return nil
