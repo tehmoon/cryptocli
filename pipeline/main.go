@@ -68,8 +68,8 @@ func initElements(elems []Element) (error) {
     go func(elem Element, wg *sync.WaitGroup) {
       err := elem.Init()
       if err != nil {
-        elem.Close()
-        return
+        fmt.Fprintln(os.Stderr, errors.Wrapf(err, "Error initializing element %T in pipeline", elem).Error())
+        os.Exit(1)
       }
 
       wg.Done()
@@ -92,7 +92,11 @@ func ioCopyElements(input io.Reader, output io.WriteCloser, elems []Element) (er
         os.Exit(1)
       }
 
-      elem.Close()
+      err = elem.Close()
+      if err != nil {
+        fmt.Fprintln(os.Stderr, errors.Wrap(err, "Error closing pipeline").Error())
+        os.Exit(1)
+      }
     }(elem, next)
 
     next = elem
@@ -105,7 +109,11 @@ func ioCopyElements(input io.Reader, output io.WriteCloser, elems []Element) (er
       os.Exit(1)
     }
 
-    writer.Close()
+    err = writer.Close()
+    if err != nil {
+      fmt.Fprintln(os.Stderr, errors.Wrap(err, "Error closing pipeline").Error())
+      os.Exit(1)
+    }
   }(output, next)
 
   return nil
