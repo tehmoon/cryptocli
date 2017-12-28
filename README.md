@@ -179,6 +179,7 @@ cryptocli dd -in s3://bucket/path/to/key -decoders gzip -out key
 ```
 
 Upload an s3 object, gzip it and write checksum
+
 ```
 cryptocli dd -in file -encoders gzip -tee-out pipe:"cryptocli dgst -encoders hex -out file.checksum" -out s3://bucket/path/to/file
 ```
@@ -227,6 +228,7 @@ Input -> filters-in -> tee input -> decoders -> byte counter in -> filters-cmd-i
     - ec
     - hmac
   - codecs
+    - pem
     - delete-chars:`characters`
     - base58
     - decimal
