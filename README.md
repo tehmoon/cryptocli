@@ -98,6 +98,8 @@ FileTypes:
 	Read lines from stdin until WORD is reached.
   s3://
 	Either upload or download from s3.
+  null:
+	Behaves like /dev/null on *nix system
 
 Filters:
   pem
