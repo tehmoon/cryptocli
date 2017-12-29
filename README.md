@@ -12,6 +12,18 @@ I use decoding/encoding tools, dd and openssl all the time. It was getting a lit
 
 Pull requests are of course welcome.
 
+## Commands:
+
+```
+Commands:
+  dd:  Copy input to output like the dd tool.
+  dgst:  Hash the content of stdin
+  pbkdf2:  Derive a key from input using the PBKDF2 algorithm
+  scrypt:  Derive a key from input using the scrypt algorithm
+  pipe:  Execute a command and attach stdin and stdout to the pipeline
+  get-certs:  Establish tls connection and get the certificates. Doesn't use any input.
+```
+
 ## Usage
 
 ```
@@ -190,6 +202,12 @@ Filter only PEM objects of type certificate
 cryptocli pipe -filters-cmd-out pem:type=certificate openssl s_client -connect google.com:443
 ```
 
+Get first cert from tls connection
+
+```
+cryptocli get-certs google.com:443
+```
+
 
 ## Internal data flow
 
@@ -198,7 +216,6 @@ Input -> filters-in -> tee input -> decoders -> byte counter in -> filters-cmd-i
 ## Futur
 
   - redo the README.md file
-  - download x509 certificates from https
   - http/https/ssl-strip proxy
   - http/https/ws/wss servers
   - tcp/tls server

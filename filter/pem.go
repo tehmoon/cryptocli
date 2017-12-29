@@ -135,6 +135,7 @@ func (pf *PemFilter) Write(data []byte) (int, error) {
       continue
     }
 
+    pf.buff.Reset()
     _, err := pf.buff.Write(rest)
     if err != nil {
       return len(data), err
