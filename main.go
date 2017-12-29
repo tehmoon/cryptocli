@@ -31,7 +31,8 @@ func main() {
 
   err = cmd.Init()
   if err != nil {
-    fmt.Fprintf(os.Stderr, errors.Wrapf(err, "Error initializing command: %s", cmd.Name()).Error())
+    fmt.Fprintln(os.Stderr, errors.Wrapf(err, "Error initializing command: %s", cmd.Name()).Error())
+    os.Exit(1)
   }
 
   done := make(chan struct{})
