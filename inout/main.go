@@ -16,6 +16,9 @@ var (
     DefaultReadline,
     DefaultS3,
     DefaultNull,
+    DefaultHex,
+    DefaultAscii,
+    DefaultRand,
   }
 )
 
@@ -86,6 +89,12 @@ func parse(inout string) (*url.URL, IO, error) {
       return uri, DefaultS3, nil
     case "null":
       return uri, DefaultNull, nil
+    case "hex":
+      return uri, DefaultHex, nil
+    case "ascii":
+      return uri, DefaultAscii, nil
+    case "rand":
+      return uri, DefaultRand, nil
     default:
       return nil, nil, errors.Errorf("Error unknown type %s\n", uri.Scheme)
   }

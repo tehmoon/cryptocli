@@ -1,6 +1,7 @@
 package command
 
 import (
+  "fmt"
   "io"
   "bytes"
   "io/ioutil"
@@ -34,13 +35,14 @@ type Pbkdf2Options struct {
   iter uint
   saltLen uint
   keyLen uint
+  noOutputSalt bool
 }
 
 var DefaultPbkdf2 = &Pbkdf2{
   name: "pbkdf2",
   description: "Derive a key from input using the PBKDF2 algorithm",
   usage: &flags.Usage{
-    CommandLine: "[-salt-in <filetype> | -salt-length <lenght>] [-key-lenght <length>] [-rounds <rounds>] [hash algorithm]",
+    CommandLine: "[[-salt-in <filetype>} [no-output-salt]] | -salt-length <lenght>] [-key-lenght <length>] [-rounds <rounds>] [hash algorithm]",
     Other: "Hash Algorithms:\n  sha1\n  sha256\n  sha512: default",
   },
   sync: make(chan error),
@@ -95,7 +97,10 @@ func (command *Pbkdf2) Init() (error) {
     dk := pbkdf2.Key(data, command.salt, iter, keyLen, command.hash)
     buff := new(bytes.Buffer)
 
-    buff.Write(command.salt)
+    if ! command.options.noOutputSalt {
+      buff.Write(command.salt)
+    }
+
     buff.Write(dk)
 
     io.Copy(writer, buff)
@@ -140,8 +145,9 @@ func (command *Pbkdf2) SetupFlags(set *flag.FlagSet) {
 
   set.StringVar(&command.options.saltIn, "salt-in", "", "If provided read from <filetype> instead of generating a new one. Mutualy exclusive with salt-length")
   set.UintVar(&command.options.saltLen, "salt-length", 32, "Lenght of the generated salt in bytes. Mutualy exclusive with -salt")
-  set.UintVar(&command.options.iter, "rounds", 32768, "Number of interation for pbkdf2. Cannot go lower than 8192")
+  set.UintVar(&command.options.iter, "rounds", 1<<15, fmt.Sprintf("Number of interation for pbkdf2. Cannot go lower than %d", 1<<13))
   set.UintVar(&command.options.keyLen, "key-length", 32, "Lenght of the derivated key in bytes.")
+  set.BoolVar(&command.options.noOutputSalt, "no-output-salt", false, "Don't output salt")
 }
 
 func (command *Pbkdf2) ParseFlags(options *flags.GlobalOptions) (error) {
@@ -164,8 +170,12 @@ func (command *Pbkdf2) ParseFlags(options *flags.GlobalOptions) (error) {
       return flags.ErrBadFlag
   }
 
-  if command.options.iter < 8192 {
-    return errors.New("Cannot have less than 8192 iterations")
+  if command.options.iter < 1<<13 {
+    return errors.Errorf("Cannot have less than %d iterations\n", 1<<13)
+  }
+
+  if command.options.noOutputSalt && command.options.saltIn == "" {
+    return errors.New("You can only set -no-output-salt with -salt-in option")
   }
 
   return nil

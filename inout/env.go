@@ -80,7 +80,7 @@ type EnvOutput struct {
 }
 
 func (out *EnvOutput) Init() (error) {
-  return errors.New("Inout module doesn't support output\n")
+  return errors.New("Env module doesn't support output\n")
 }
 
 func (out *EnvOutput) Write(data []byte) (int, error) {
