@@ -1,6 +1,7 @@
 package command
 
 import (
+  "fmt"
   "io"
   "bytes"
   "io/ioutil"
@@ -71,7 +72,7 @@ func (command *Scrypt) Init() (error) {
     }
 
     if read != len(command.salt) {
-      return errors.New("Error getting salt fully generating")
+      return errors.New("Error generated salt doens't match length")
     }
   }
 
@@ -144,14 +145,15 @@ func (command *Scrypt) SetupFlags(set *flag.FlagSet) {
 
   set.StringVar(&command.options.saltIn, "salt-in", "", "If provided use salt in hex format instead of generating a new one. Mutualy exclusive with salt-length")
   set.UintVar(&command.options.saltLen, "salt-length", 32, "Lenght of the generated salt in bytes. Mutualy exclusive with -salt")
-  set.UintVar(&command.options.iter, "rounds", 32768, "Number of interation for scrypt. Cannot go lower than 16384")
+  set.UintVar(&command.options.iter, "rounds", 1<<15, fmt.Sprintf("Number of interation for scrypt. Cannot go lower than %d", 1<<14))
   set.UintVar(&command.options.keyLen, "key-length", 32, "Lenght of the derivated key in bytes.")
   set.BoolVar(&command.options.noOutputSalt, "no-output-salt", false, "Don't output salt")
 }
 
 func (command *Scrypt) ParseFlags(options *flags.GlobalOptions) (error) {
-  if command.options.iter < 16384 {
-    return errors.New("Cannot have less than 16384 iterations")
+  if command.options.iter < 1<<14{
+    return errors.Errorf("Cannot have less than %d iterations\n", 1<<14)
+  }
 
   if command.options.noOutputSalt && command.options.saltIn == "" {
     return errors.New("You can only set -no-output-salt with -salt-in option")

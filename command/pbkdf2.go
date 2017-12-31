@@ -1,6 +1,7 @@
 package command
 
 import (
+  "fmt"
   "io"
   "bytes"
   "io/ioutil"
@@ -144,7 +145,7 @@ func (command *Pbkdf2) SetupFlags(set *flag.FlagSet) {
 
   set.StringVar(&command.options.saltIn, "salt-in", "", "If provided read from <filetype> instead of generating a new one. Mutualy exclusive with salt-length")
   set.UintVar(&command.options.saltLen, "salt-length", 32, "Lenght of the generated salt in bytes. Mutualy exclusive with -salt")
-  set.UintVar(&command.options.iter, "rounds", 32768, "Number of interation for pbkdf2. Cannot go lower than 8192")
+  set.UintVar(&command.options.iter, "rounds", 1<<15, fmt.Sprintf("Number of interation for pbkdf2. Cannot go lower than %d", 1<<13))
   set.UintVar(&command.options.keyLen, "key-length", 32, "Lenght of the derivated key in bytes.")
   set.BoolVar(&command.options.noOutputSalt, "no-output-salt", false, "Don't output salt")
 }
@@ -169,8 +170,9 @@ func (command *Pbkdf2) ParseFlags(options *flags.GlobalOptions) (error) {
       return flags.ErrBadFlag
   }
 
-  if command.options.iter < 8192 {
-    return errors.New("Cannot have less than 8192 iterations")
+  if command.options.iter < 1<<13 {
+    return errors.Errorf("Cannot have less than %d iterations\n", 1<<13)
+  }
 
   if command.options.noOutputSalt && command.options.saltIn == "" {
     return errors.New("You can only set -no-output-salt with -salt-in option")
