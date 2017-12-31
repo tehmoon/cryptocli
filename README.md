@@ -100,6 +100,12 @@ FileTypes:
 	Either upload or download from s3.
   null:
 	Behaves like /dev/null on *nix system
+  hex:
+	Decode hex value and use it for input. Doesn't work for output
+  ascii:
+	Decode ascii value and use it for input. Doesn't work for output
+  rand:
+	Rand is a global, shared instance of a cryptographically strong pseudo-random generator. On Linux, Rand uses getrandom(2) if available, /dev/urandom otherwise. On OpenBSD, Rand uses getentropy(2). On other Unix-like systems, Rand reads from /dev/urandom. On Windows systems, Rand uses the CryptGenRandom API. Doesn't work with output.
 
 Filters:
   pem
@@ -208,6 +214,19 @@ Get first cert from tls connection
 
 ```
 cryptocli get-certs google.com:443
+```
+
+Generate random 32 bytes strings using crypto/rand lib
+
+```
+cryptocli dd -in rand: -to-byte-in 32 -encoders hex
+```
+
+Set salt in pbkdf2/scrypt from hex or from ascii
+
+```
+cryptocli pbkdf2 -salt-in hex:deadbeef -encoders hex
+cryptocli scrypt -salt-in ascii:deadbeef -encoders hex
 ```
 
 
