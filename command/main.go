@@ -40,6 +40,10 @@ func ParseCommand() (CommandPipe) {
       return DefaultPipe
     case DefaultGetCerts.Name():
       return DefaultGetCerts
+    case DefaultAesGcmEncrypt.Name():
+      return DefaultAesGcmEncrypt
+    case DefaultAesGcmDecrypt.Name():
+      return DefaultAesGcmDecrypt
     default:
       fmt.Fprintf(os.Stderr, "Unknown command: %s\n", command)
       UsageCommand()
@@ -55,6 +59,8 @@ var CommandList = []Command{
   DefaultScrypt,
   DefaultPipe,
   DefaultGetCerts,
+  DefaultAesGcmEncrypt,
+  DefaultAesGcmDecrypt,
 }
 
 func UsageCommand() {

@@ -22,6 +22,8 @@ Commands:
   scrypt:  Derive a key from input using the scrypt algorithm
   pipe:  Execute a command and attach stdin and stdout to the pipeline
   get-certs:  Establish tls connection and get the certificates. Doesn't use any input.
+  aes-gcm-encrypt:  Encrypt and authenticate 16KiB blocks of data using AES algorithm with GCM mode. Padding is not necessary so if EOF is reached, it will return less. Nonce are 8 random bytes followed byte 4 bytes which starts by 0 and are incremented. So it outputs the following <-salt-length> || nonce[:8] || (tag || encrypted data)... . To Decrypt you must read <-salt-length> if you need to derive the key, then reconstruct the nonce by taking the following 8 bytes and appending 0x00000000, then the following 16KiB can be decrypted with GCM. For each 16KiB until EOF -- no padding -- don't forget to reuse the first 8 bytes of the nonce and increment the last 4 bytes ONLY.
+  aes-gcm-decrypt:  Decrypt and verify authentication of 16KiB block of data using AES algorithm with GCM mode. Nonce of 8 bytes is read after reading the salt to derived the key. Then we append 4 bytes number to the nonce every block starting at 0. Only the first 8 bytes of the nonce is reused. By default it uses scrypt to derive the key but if you want to use your own KDF, aes-gcm-decrypt  will read the salt up to -salt-length then set the environment variable SALT to the hex salt value so you can execute your KDF using the pipe: inout module. If you do that, the salt is expected to be found prepended to the key.
 ```
 
 ## Usage
@@ -229,6 +231,34 @@ cryptocli pbkdf2 -salt-in hex:deadbeef -encoders hex
 cryptocli scrypt -salt-in ascii:deadbeef -encoders hex
 ```
 
+Encrypt using AES in GCM mode
+
+```
+# Read a password from keyboard then encrypt a file using default KDF. Write the output to file
+read -s password; password=${password} ./cryptocli aes-gcm-encrypt -in ascii:blah -password-in env:password -out enc
+
+# Read a password from keyboard then encrypt a file using custom KDF. Write the output to file
+# WARNING: USING OWN KDF IS FOR PEOPLE WHO KNOW WHAT THEY ARE DOING. MIGHT RESULT IN WEAK KEY
+#        : THIS EXAMPLE USES A WEAKER SCRYPT THAN DEFAULT BUT STILL OK TO USE.
+read -s password; password=${password} ./cryptocli aes-gcm-encrypt -in ascii:blah -derived-salt-key-in pipe:"cryptocli scrypt -rounds $((1<<16)) -in ascii:\${password} -key-length 32" -out enc
+
+# Encrypt a file using provided key and without salt
+# WARNING: USING YOUR OWN KEY SHOULD BE FOR PEOPLE WHO KNOW WHAT THEY ARE DOING. DONT USE EXAMPLE'S KEY. USE PROPER KDF FOR WEAKER PASSWORD. PASSWORD != KEY
+./cryptocli aes-gcm-encrypt -in ascii:blah -derived-salt-key-in hex:0000000000000000000000000000000000000000000000000000000000000000 -salt-length 0 -out enc3
+```
+
+Decrypt using AES in GCM mode from examples above
+
+```
+# Read a password from keyboard then decrypt a file using default KDF. Read the input from file
+read -s password; password=${password} ./cryptocli aes-gcm-decrypt -in enc -password-in env:password
+
+# Read a password from keyboard then decrypt a file using custom KDF. Read the input from file
+read -s password; password=${password} ./cryptocli aes-gcm-decrypt -in enc -derived-salt-key-in pipe:"cryptocli scrypt -rounds $((1<<16)) -in ascii:\${password} -salt-in hex:\${SALT}"
+
+# Decrypt a file using provided key and without salt
+./cryptocli aes-gcm-decrypt -in enc -derived-salt-key-in hex:0000000000000000000000000000000000000000000000000000000000000000 -salt-length 0
+```
 
 ## Internal data flow
 
@@ -261,7 +291,6 @@ Input -> filters-in -> tee input -> decoders -> byte counter in -> filters-cmd-i
     - scp://\<path> `copy from/to sshv2 server`
     - kafka://\<host>/\<topic> `receive/send message to kafka`
   - commands
-    - aes-256-cbc -key-in \<filetype> -derived-key-in \<filetype> -salt-pos 0 -salt-length 32 -salt-in \<filetype> -iv-in \<filetype> -iv-pos 32 -iv-length 32
     - nacl
     - ec
     - hmac
