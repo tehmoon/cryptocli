@@ -24,17 +24,25 @@ type S3 struct {
 }
 
 func (s S3) In(u *url.URL) (Input) {
+  sess := session.Must(session.NewSessionWithOptions(session.Options{
+      SharedConfigState: session.SharedConfigEnable,
+  }))
+
   return &S3Input{
     name: "s3-input",
-    session: session.Must(session.NewSession()),
+    session: sess,
     url: u,
   }
 }
 
 func (s S3) Out(u *url.URL) (Output) {
+  sess := session.Must(session.NewSessionWithOptions(session.Options{
+      SharedConfigState: session.SharedConfigEnable,
+  }))
+
   return &S3Output{
     name: "s3-output",
-    session: session.Must(session.NewSession()),
+    session: sess,
     url: u,
   }
 }
