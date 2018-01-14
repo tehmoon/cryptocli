@@ -17,7 +17,7 @@ Pull requests are of course welcome.
 ```
 Commands:
   dd:  Copy input to output like the dd tool.
-  dgst:  Hash the content of stdin
+  dgst:  Hash from input
   pbkdf2:  Derive a key from input using the PBKDF2 algorithm
   scrypt:  Derive a key from input using the scrypt algorithm
   pipe:  Execute a command and attach stdin and stdout to the pipeline
@@ -120,6 +120,12 @@ Get the last 32 byte of a sha512 hash function from a hex string to base64 witho
 
 ```
 echo -n 'DEADBEEF' | cryptocli dgst -decoder hex -encoder base64 -from-byte-out 32 -to-byte-out +32 -chomp sha512
+```
+
+Verify a checksum
+
+```
+echo toto | cryptocli dgst -checksum-in hex:9a266fc8b42966fb624d852bafa241d8fd05b47d36153ff6684ab344bd1ae57bba96a7de8fc12ec0bb016583735d7f5bca6dd7d9bc6482c2a3ac6bf6f9ec323f
 ```
 
 Transform stdin to binary string
