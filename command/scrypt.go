@@ -37,7 +37,7 @@ var DefaultScrypt = &Scrypt{
   name: "scrypt",
   description: "Derive a key from input using the scrypt algorithm",
   usage: &flags.Usage{
-    CommandLine: "[[-salt-in <filetype>] [ -no-output-salt]] | -salt-length <lenght>] [-key-lenght <length>] [-rounds <rounds>]",
+    CommandLine: "[[-salt-in <filetype>] [ -no-output-salt]] | -salt-length <length>] [-key-lenght <length>] [-rounds <rounds>]",
     Other: "",
   },
   sync: make(chan error),
@@ -50,7 +50,7 @@ func (command *Scrypt) Init() (error) {
   )
 
   if command.options.saltIn != "" {
-    reader , err := inout.ParseInput(command.options.saltIn)
+    reader, err := inout.ParseInput(command.options.saltIn)
     if err != nil {
       return errors.Wrap(err, "Error parsing filetype for -salt-in")
     }
