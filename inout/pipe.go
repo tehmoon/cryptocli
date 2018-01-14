@@ -31,6 +31,7 @@ func (p Pipe) In(uri *url.URL) (Input) {
   input := &PipeInput{
     command: command,
     name: "pipe-input",
+    Env: os.Environ(),
   }
 
   input.pipeReader, input.pipeWriter = io.Pipe()
@@ -55,6 +56,7 @@ func (p Pipe) Out(uri *url.URL) (Output) {
   output := &PipeOutput{
     command: command,
     name: "pipe-output",
+    Env: os.Environ(),
   }
 
   output.pipeReader, output.pipeWriter = io.Pipe()
@@ -63,6 +65,7 @@ func (p Pipe) Out(uri *url.URL) (Output) {
 }
 
 type PipeInput struct {
+  Env []string
   pipeReader *io.PipeReader
   pipeWriter *io.PipeWriter
   command string
@@ -73,6 +76,7 @@ type PipeInput struct {
 }
 
 type PipeOutput struct {
+  Env []string
   pipeReader *io.PipeReader
   pipeWriter *io.PipeWriter
   command string
@@ -102,8 +106,9 @@ func pipeGetShell() (string) {
   return shell
 }
 
-func pipeStartAndAttachStdin(command string, args... string) (*exec.Cmd, io.WriteCloser, io.ReadCloser, error) {
+func pipeStartAndAttachStdin(env []string, command string, args... string) (*exec.Cmd, io.WriteCloser, io.ReadCloser, error) {
   cmd := exec.Command(command, args...)
+  cmd.Env = env
 
   stdin, err := cmd.StdinPipe()
   if err != nil {
@@ -123,8 +128,9 @@ func pipeStartAndAttachStdin(command string, args... string) (*exec.Cmd, io.Writ
   return cmd, stdin, stderr, err
 }
 
-func pipeStartAndAttachStdout(command string, args... string) (*exec.Cmd, io.ReadCloser, io.ReadCloser, error) {
+func pipeStartAndAttachStdout(env []string, command string, args... string) (*exec.Cmd, io.ReadCloser, io.ReadCloser, error) {
   cmd := exec.Command(command, args...)
+  cmd.Env = env
 
   stdout, err := cmd.StdoutPipe()
   if err != nil {
@@ -158,7 +164,7 @@ func (in *PipeInput) Init() (error) {
     return ErrInoutPipeBadOS
   }
 
-  cmd, stdout, stderr, err := pipeStartAndAttachStdout(shell, "-c", in.command)
+  cmd, stdout, stderr, err := pipeStartAndAttachStdout(in.Env, shell, "-c", in.command)
   if err != nil {
     return err
   }
@@ -224,7 +230,7 @@ func (out *PipeOutput) Init() (error) {
     return ErrInoutPipeBadOS
   }
 
-  cmd, stdin, stderr, err := pipeStartAndAttachStdin(shell, "-c", out.command)
+  cmd, stdin, stderr, err := pipeStartAndAttachStdin(out.Env, shell, "-c", out.command)
   if err != nil {
     return err
   }

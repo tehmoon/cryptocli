@@ -10,12 +10,10 @@ import (
   "hash"
   "io/ioutil"
   "../flags"
-  "../codec"
   "github.com/tehmoon/errors"
-  "strings"
-  "../pipeline"
   "golang.org/x/crypto/blake2b"
   "golang.org/x/crypto/sha3"
+  "../inout"
 )
 
 type Dgst struct {
@@ -31,15 +29,14 @@ type Dgst struct {
 }
 
 type DgstOptions struct {
-  checksum string
-  checksumDecoders string
+  checksumIn string
 }
 
 var DefaultDgst = &Dgst{
   name: "dgst",
   description: "Hash the content of stdin",
   usage: &flags.Usage{
-    CommandLine: "<hash algorithm>",
+    CommandLine: "[-checksum-in <filetype>] <hash algorithm>",
     Other: "Hash Algorithms:\n  sha1\n  sha256\n  sha512\n  blake2b-256\n  blake2b-384\n  blake2b-512\n  sha3-224\n  sha3-256\n  sha3-384\n  sha3-512",
   },
   options: DgstOptions{},
@@ -47,6 +44,28 @@ var DefaultDgst = &Dgst{
 
 func (command *Dgst) Init() (error) {
   command.pipeReader, command.pipeWriter = io.Pipe()
+
+  if command.options.checksumIn != "" {
+    reader, err := inout.ParseInput(command.options.checksumIn)
+    if err != nil {
+      return errors.Wrap(err, "Error parsing filtype for -checksum-in")
+    }
+
+    err = reader.Init()
+    if err != nil {
+      return errors.Wrap(err, "Error initializing filetype for -checksum-in")
+    }
+
+    command.checksum, err = ioutil.ReadAll(reader)
+    if err != nil {
+      return errors.Wrap(err, "Error reading filetype for -checksum-in")
+    }
+
+    err = reader.Close()
+    if err != nil {
+      return errors.Wrap(err, "Erro closing filetype for -checksum-in")
+    }
+  }
 
   return nil
 }
@@ -94,67 +113,17 @@ func (command Dgst) Close() (error) {
 func (command *Dgst) SetupFlags(set *flag.FlagSet) {
   command.flagSet = set
 
-  command.flagSet.StringVar(&command.options.checksum, "checksum", "", "Checksum to verify against. Outputs an error if doesn't match. Doesn't output checksum.")
-  command.flagSet.StringVar(&command.options.checksumDecoders, "checksum-decoders", "hex", "Decoder checksum value when used with -checksum.")
+  command.flagSet.StringVar(&command.options.checksumIn, "checksum-in", "", "Checksum to verify against. Outputs an error if doesn't match. Doesn't output checksum.")
 }
 
 func (command *Dgst) ParseFlags(options *flags.GlobalOptions) (error) {
-  var (
-    hashFunction string = ""
-    decoders []codec.CodecDecoder
-  )
+  hashFunction := ""
 
   if command.flagSet.Parsed() {
     hashFunction = command.flagSet.Arg(0)
 
-    if command.options.checksumDecoders == "" && command.options.checksum != "" {
-      return errors.New("When -checksum-decoders is specify, -checksum cannot be empty")
-    }
-
-    if command.options.checksumDecoders != "" {
-      cvs, err := codec.ParseAll(strings.Split(command.options.checksumDecoders, ","))
-      if err != nil {
-        return errors.Wrap(err, "Bad flag -checksum-decoders")
-      }
-
-      decoders = make([]codec.CodecDecoder, len(cvs))
-      for i, cv := range cvs {
-        dec := cv.Codec.Decoder(cv.Values)
-        if dec == nil {
-          return errors.Errorf("Codec %s doesn't support decoding\n", cv.Codec.Name())
-        }
-
-        decoders[i] = dec
-      }
-    }
-
-    if command.options.checksum != "" && decoders != nil {
+    if command.options.checksumIn != "" {
       options.Chomp = true
-
-      pipe := pipeline.New()
-      for _, dec := range decoders {
-        err := pipe.Add(dec)
-        if err != nil {
-          return errors.Wrapf(err, "Error adding decoder %T to the pipe", dec)
-        }
-      }
-
-      err := pipe.Init()
-      if err != nil {
-        return errors.Wrap(err, "Error intializing the pipe")
-      }
-
-      go func() {
-        io.Copy(pipe, strings.NewReader(command.options.checksum))
-        pipe.Close()
-      }()
-
-      buff, err := ioutil.ReadAll(pipe)
-      if err != nil {
-        return errors.Wrap(err, "Error decoding -checksum")
-      }
-
-      command.checksum = buff
     }
   }
 
