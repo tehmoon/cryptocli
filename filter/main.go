@@ -21,6 +21,7 @@ type Initializer interface {
 var (
   FilterList []Initializer = []Initializer{
     DefaultPem,
+    DefaultByteCounter,
   }
   ErrFilterParseEmpty = errors.New("empty filter")
   ErrFilterNotImplemented = errors.New("filter not implemented")
@@ -31,6 +32,8 @@ func Parse(filter string) (Filter, error) {
     return nil, ErrFilterParseEmpty
   }
 
+  filter = strings.Replace(filter, "+", "%2B", -1)
+
   uri, err := url.Parse(filter)
   if err != nil {
     return nil, errors.Wrap(err, "Error parsing filter to URL")
@@ -39,11 +42,15 @@ func Parse(filter string) (Filter, error) {
   switch uri.Scheme {
     case "pem":
       return DefaultPem.Filter(uri), nil
+    case "byte-counter":
+      return DefaultByteCounter.Filter(uri), nil
   }
 
   switch filter {
     case "pem":
       return DefaultPem.Filter(nil), nil
+    case "byte-counter":
+      return DefaultByteCounter.Filter(uri), nil
   }
 
   return nil, ErrFilterNotImplemented
