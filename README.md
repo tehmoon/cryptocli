@@ -12,6 +12,19 @@ I use decoding/encoding tools, dd and openssl all the time. It was getting a lit
 
 Pull requests are of course welcome.
 
+## How to install
+There are two ways you could install `cryptocli`:
+
+  - By going to the [release page](https://github.com/tehmoon/cryptocli/releases)
+  - By compiling it yourself:
+    - Download and install [go](https://golang.org)
+    - `git clone https://github.com/tehmoon/cryptocli`
+    - Set `GOPATH`: `mkdir ~/work/go && export GOPATH=~/work/go`
+    - `cd cryptocli`
+    - Get dependencies `go get ./...`
+    - Generate binary `go build`
+    - Optional: Move the binary to `${GOPATH}/bin`: `go install`
+
 ## Commands:
 
 ```
@@ -110,16 +123,12 @@ Filters:
 
 ## Examples
 
+### Passing data and transforming
+
 Get the last 32 byte of a sha512 hash function from a hex string to base64 without last \n
 
 ```
-echo -n 'DEADBEEF' | cryptocli dgst -decoder hex -encoder base64 -from-byte-out 32 -to-byte-out +32 -chomp sha512
-```
-
-Verify a checksum
-
-```
-echo toto | cryptocli dgst -checksum-in hex:9a266fc8b42966fb624d852bafa241d8fd05b47d36153ff6684ab344bd1ae57bba96a7de8fc12ec0bb016583735d7f5bca6dd7d9bc6482c2a3ac6bf6f9ec323f
+echo -n 'DEADBEEF' | ./cryptocli dgst -decoders hex -encoders base64 -filters-cmd-out byte-counter:start-at=32 -chomp sha512
 ```
 
 Transform stdin to binary string
@@ -137,13 +146,7 @@ echo -n toto | cryptocli dd -encoders gzip,base64
 Get rid of the first 2 bytes
 
 ```
-echo -n toto | cryptocli dd -from-byte-in 2
-```
-
-Output the base64 hash of stdin to file
-
-```
-echo -n toto | cryptocli dgst -encoders base64 -out file://./toto.txt sha512
+echo -n toto | cryptocli dd -filters-in byte-counter:start-at=2 2
 ```
 
 Decode base64 from file to stdout in hex
@@ -156,36 +159,6 @@ Gzip input, write it to file and write its sha512 checksum in hex format to anot
 
 ```
 echo toto | cryptocli dd -encoders gzip -tee-out pipe:"cryptocli dgst -encoders hex -out ./checksum.txt" -out ./file.gz
-```
-
-SHA512 an https web page then POST the result to http server:
-
-```
-cryptocli dgst -in https://www.google.com -encoders hex sha512 -out http://localhost:12345/
-```
-
-Generate 32 byte salt and derive a 32 bytes key from input to `derivated-key.txt` file.
-
-```
-echo -n toto | cryptocli pbkdf2 -encoders base64 -out derivated-key.txt
-```
-
-You should have the same result as in `derivated-key.txt` file
-
-```
-echo -n toto | cryptcli pbkdf2 -salt-in pipe:"cryptocli dd -decoders base64 -to-byte-in 32" -encoders base64
-```
-
-Read key from env then scrypt it
-
-```
-key=blah cryptocli scrypt -in env:key -encoders base64
-```
-
-Hash lines read from stdin
-
-```
-cryptocli dgst -in readline:WORD -encoders hex
 ```
 
 Execute nc -l 12344 which opens a tcp server and base64 the output
@@ -221,7 +194,51 @@ cryptocli get-certs google.com:443
 Generate random 32 bytes strings using crypto/rand lib
 
 ```
-cryptocli dd -in rand: -to-byte-in 32 -encoders hex
+cryptocli dd -in rand: -filters-in byte-counter:stop-at=32 -encoders hex
+```
+
+### Hashing/Key Derivation Function
+
+Verify a checksum
+
+```
+echo toto | cryptocli dgst -checksum-in hex:9a266fc8b42966fb624d852bafa241d8fd05b47d36153ff6684ab344bd1ae57bba96a7de8fc12ec0bb016583735d7f5bca6dd7d9bc6482c2a3ac6bf6f9ec323f
+```
+
+Output the base64 hash of stdin to file
+
+```
+echo -n toto | cryptocli dgst -encoders base64 -out file://./toto.txt sha512
+```
+
+SHA512 an https web page then POST the result to http server:
+
+```
+cryptocli dgst -in https://www.google.com -encoders hex sha512 -out http://localhost:12345/
+```
+
+Generate 32 byte salt and derive a 32 bytes key from input to `derived-key.txt` file.
+
+```
+echo -n toto | cryptocli pbkdf2 -encoders base64 -out derived-key.txt
+```
+
+You should have the same result as in `derived-key.txt` file
+
+```
+echo -n toto | cryptocli pbkdf2 -salt-in pipe:"cryptocli dd -in derived-key.txt -decoders base64 -filters-out byte-counter:stop-at=32" -encoders base64
+```
+
+Read key from env then scrypt it
+
+```
+key=blah cryptocli scrypt -in env:key -encoders base64
+```
+
+Hash lines read from stdin
+
+```
+cryptocli dgst -in readline:WORD -encoders hex
 ```
 
 Set salt in pbkdf2/scrypt from hex or from ascii
@@ -230,6 +247,8 @@ Set salt in pbkdf2/scrypt from hex or from ascii
 cryptocli pbkdf2 -salt-in hex:deadbeef -encoders hex
 cryptocli scrypt -salt-in ascii:deadbeef -encoders hex
 ```
+
+### Encryption/Decryption
 
 Encrypt using AES in GCM mode
 
