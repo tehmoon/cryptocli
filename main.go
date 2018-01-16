@@ -36,8 +36,6 @@ func main() {
   }
 
   done := make(chan struct{})
-  byteCounterIn := newByteCounter(globalOptions.FromByteIn, globalOptions.ToByteIn)
-  byteCounterOut := newByteCounter(globalOptions.FromByteOut, globalOptions.ToByteOut)
 
   filtersIn := pipeline.New()
   filtersCmdIn := pipeline.New()
@@ -191,49 +189,19 @@ func main() {
     done <- struct{}{}
   }()
 
-  if globalOptions.FromByteOut != 0 || globalOptions.ToByteOut != 0 {
-    go func() {
-       _, err := io.Copy(byteCounterOut, cmdOut)
-      if err != nil {
-        fmt.Fprintf(os.Stderr, errors.Wrap(err, "Err reading in command").Error())
-        os.Exit(1)
-      }
+  go func() {
+     _, err = io.Copy(encoders, cmdOut)
+    if err != nil {
+      fmt.Fprintf(os.Stderr, errors.Wrap(err, "Err reading in encoderReader").Error())
+      os.Exit(1)
+    }
 
-      err = byteCounterOut.Close()
-      if err != nil {
-        fmt.Fprintln(os.Stderr, err)
-        os.Exit(1)
-      }
-    }()
-
-    go func() {
-       _, err = io.Copy(encoders, byteCounterOut)
-      if err != nil {
-        fmt.Fprintf(os.Stderr, errors.Wrap(err, "Err reading in byteCounterOut: %v").Error())
-        os.Exit(1)
-      }
-
-      err = encoders.Close()
-      if err != nil {
-        fmt.Fprintln(os.Stderr, err)
-        os.Exit(1)
-      }
-    }()
-  } else {
-    go func() {
-       _, err = io.Copy(encoders, cmdOut)
-      if err != nil {
-        fmt.Fprintf(os.Stderr, errors.Wrap(err, "Err reading in encoderReader").Error())
-        os.Exit(1)
-      }
-
-      err = encoders.Close()
-      if err != nil {
-        fmt.Fprintln(os.Stderr, err)
-        os.Exit(1)
-      }
-    }()
-  }
+    err = encoders.Close()
+    if err != nil {
+      fmt.Fprintln(os.Stderr, err)
+      os.Exit(1)
+    }
+  }()
 
   decoders := pipeline.New()
   for _, dec := range globalOptions.Decoders {
@@ -250,89 +218,39 @@ func main() {
     os.Exit(1)
   }
 
-  if globalOptions.FromByteIn != 0 || globalOptions.ToByteIn != 0 {
-    go func() {
-       _, err = io.Copy(byteCounterIn, decoders)
-      if err != nil {
-        fmt.Fprintf(os.Stderr, errors.Wrap(err, "Error reading from -decoders").Error())
-        os.Exit(1)
-      }
+  go func() {
+    _, err := io.Copy(filtersCmdIn, decoders)
+    if err != nil {
+      fmt.Fprintf(os.Stderr, errors.Wrap(err, "Error reading from -decoders").Error())
+      os.Exit(1)
+    }
 
-      err = byteCounterIn.Close()
-      if err != nil {
-        fmt.Fprintln(os.Stderr, err)
-        os.Exit(1)
-      }
-    }()
+    err = filtersCmdIn.Close()
+    if err != nil {
+      fmt.Fprintf(os.Stderr, errors.Wrap(err, "Error closing -filters-cmd-in").Error())
+      os.Exit(1)
+    }
+  }()
 
-    go func() {
-      _, err := io.Copy(filtersCmdIn, byteCounterIn)
-      if err != nil {
-        fmt.Fprintf(os.Stderr, errors.Wrap(err, "Error reading from -decoders").Error())
-        os.Exit(1)
-      }
+  go func() {
+    var cmdIn io.Reader = filtersCmdIn
 
-      err = filtersCmdIn.Close()
-      if err != nil {
-        fmt.Fprintf(os.Stderr, errors.Wrap(err, "Error closing -filters-cmd-in").Error())
-        os.Exit(1)
-      }
-    }()
+    if globalOptions.TeeCmdIn != nil {
+      cmdIn = io.TeeReader(cmdIn, globalOptions.TeeCmdIn)
+    }
 
-    go func() {
-      var cmdIn io.Reader = filtersCmdIn
+    _, err = io.Copy(cmd, cmdIn)
+    if err != nil {
+      fmt.Fprintf(os.Stderr, errors.Wrap(err, "Err in reading decoder decoderReader").Error())
+      os.Exit(1)
+    }
 
-      if globalOptions.TeeCmdIn != nil {
-        cmdIn = io.TeeReader(cmdIn, globalOptions.TeeCmdIn)
-      }
-
-       _, err := io.Copy(cmd, cmdIn)
-      if err != nil {
-        fmt.Fprintf(os.Stderr, errors.Wrap(err, "Err reading in byteCounterIn").Error())
-        os.Exit(1)
-      }
-
-      err = cmd.Close()
-      if err != nil {
-        fmt.Fprintln(os.Stderr, err)
-        os.Exit(1)
-      }
-    }()
-  } else {
-    go func() {
-      _, err := io.Copy(filtersCmdIn, decoders)
-      if err != nil {
-        fmt.Fprintf(os.Stderr, errors.Wrap(err, "Error reading from -decoders").Error())
-        os.Exit(1)
-      }
-
-      err = filtersCmdIn.Close()
-      if err != nil {
-        fmt.Fprintf(os.Stderr, errors.Wrap(err, "Error closing -filters-cmd-in").Error())
-        os.Exit(1)
-      }
-    }()
-
-    go func() {
-      var cmdIn io.Reader = filtersCmdIn
-
-      if globalOptions.TeeCmdIn != nil {
-        cmdIn = io.TeeReader(cmdIn, globalOptions.TeeCmdIn)
-      }
-
-      _, err = io.Copy(cmd, cmdIn)
-      if err != nil {
-        fmt.Fprintf(os.Stderr, errors.Wrap(err, "Err in reading decoder decoderReader").Error())
-        os.Exit(1)
-      }
-
-      err = cmd.Close()
-      if err != nil {
-        fmt.Fprintln(os.Stderr, err)
-        os.Exit(1)
-      }
-    }()
-  }
+    err = cmd.Close()
+    if err != nil {
+      fmt.Fprintln(os.Stderr, err)
+      os.Exit(1)
+    }
+  }()
 
   go func() {
     err := globalOptions.Input.Init()

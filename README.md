@@ -50,10 +50,6 @@ Options:
     	List of <filter> in URL format that filters data right before -decoders
   -filters-out string
     	List of <filter> in URL format that filters data right after -encoders
-  -from-byte-in string
-    	Skip the first x bytes of stdin. Use 0X/0x for base 16, 0b/0B for base 2, 0 for base8 otherwise base 10
-  -from-byte-out string
-    	Skip the first x bytes of stdout. Use 0X/0x for base 16, 0b/0B for base 2, 0 for base8 otherwise base 10
   -in string
     	Input <fileType> method
   -out string
@@ -66,10 +62,6 @@ Options:
     	Copy output before -encoders to <fileType>
   -tee-out string
     	Copy output after -encoders to <fileType>
-  -to-byte-in string
-    	Stop at byte x of stdin.  Use 0X/0x for base 16, 0b/0B for base 2, 0 for base8 otherwise base 10. If you add a '+' at the begining, the value will be added to -from-byte-in
-  -to-byte-out string
-    	Stop at byte x of stdout. Use 0X/0x for base 16, 0b/0B for base 2, 0 for base8 otherwise base 10. If you add a '+' at the begining, the value will be added to -from-byte-out
 
 Codecs:
   hex
@@ -112,6 +104,8 @@ FileTypes:
 Filters:
   pem
 	Filter PEM objects. Options: type=<PEM type> start-at=<number> stop-at=<number>. Type will filter only PEM objects with this type. Start-at will discard the first <number> PEM objects. Stop-at will stop at PEM object <number>.
+  byte-counter
+	Keep track of in and out bytes. Options: start-at=<number> stop-at=[+]<number>. Start-at option will discard the first <number> bytes. The Stop-at option will stop at byte <number>. Position <number> can be express in base16 with 0x/0X, base2 with 0b/0B or 0 for base8. If a + sign is found in the stop-at option; start-at <number> is added to stop-at <number>.
 ```
 
 ## Examples
@@ -268,7 +262,7 @@ read -s password; password=${password} ./cryptocli aes-gcm-decrypt -in enc -deri
 
 ## Internal data flow
 
-Input -> filters-in -> tee input -> decoders -> byte counter in -> filters-cmd-in -> tee command input -> command -> filters-cmd-out -> tee command output -> byte counter out -> encoders -> filters-out -> tee output -> output
+Input -> filters-in -> tee input -> decoders -> filters-cmd-in -> tee command input -> command -> filters-cmd-out -> tee command output -> encoders -> filters-out -> tee output -> output
 
 ## Futur
 
