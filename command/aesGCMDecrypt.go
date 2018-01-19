@@ -18,10 +18,10 @@ var (
   DefaultAesGcmDecrypt = &AesGcmDecrypt{
     name: "aes-gcm-decrypt",
     usage: &flags.Usage{
-      CommandLine: "<-direved-salt-key-n <filetype> | -password-in <filetype>> [-salt-length int] [key-lenth]",
+      CommandLine: "<-direved-salt-key-n <filetype> | -password-in <filetype>> [-salt-length int] [-block-size int] [key-lenth]",
       Other: "Key Length:\n  128: Use 128 bits key security\n  256: Use 256 bits key security",
     },
-    description: "Decrypt and verify authentication of 16KiB block of data using AES algorithm with GCM mode. Nonce of 8 bytes is read after reading the salt to derived the key. Then we append 4 bytes number to the nonce every block starting at 0. Only the first 8 bytes of the nonce is reused. By default it uses scrypt to derive the key but if you want to use your own KDF, aes-gcm-decrypt  will read the salt up to -salt-length then set the environment variable SALT to the hex salt value so you can execute your KDF using the pipe: inout module. If you do that, the salt is expected to be found prepended to the key.",
+    description: "Decrypt and verify authentication of <-block-size>'s block of data using AES algorithm with GCM mode. Nonce of 8 bytes is read after reading the salt to derived the key. Then we append 4 bytes number to the nonce every block starting at 0. Only the first 8 bytes of the nonce is reused. By default it uses scrypt to derive the key but if you want to use your own KDF, aes-gcm-decrypt  will read the salt up to -salt-length then set the environment variable SALT to the hex salt value so you can execute your KDF using the pipe: inout module. If you do that, the salt is expected to be found prepended to the key.",
     options: &AesGcmDecryptOptions{
       NonceSize: 12,
     },
@@ -43,6 +43,7 @@ type AesGcmDecrypt struct {
 }
 
 type AesGcmDecryptOptions struct {
+  BlockSize uint
   NonceSize int
   KeySize int
   SaltLen int
@@ -110,7 +111,7 @@ func (command *AesGcmDecrypt) Init() (error) {
       return
     }
 
-    buff := make([]byte, (1<<14) + uint64(aesgcm.Overhead()))
+    buff := make([]byte, uint64(command.options.BlockSize) + uint64(aesgcm.Overhead()))
 
     LOOP: for {
       read, err = io.ReadFull(command.encReader, buff)
@@ -180,6 +181,7 @@ func (command *AesGcmDecrypt) SetupFlags(set *flag.FlagSet) {
   set.IntVar(&command.options.SaltLen, "salt-length", 32, "Byte to read from -derived-salt-key-in")
   set.StringVar(&command.options.DerivedSaltKeyIn, "derived-salt-key-in", "", fmt.Sprintf("If specified, read the number of bytes from -salt-length for salt and the remaining %d for the key. Will if the key is too long or too short. Cannot be used with -password", command.options.KeySize))
   set.StringVar(&command.options.PasswordIn, "password-in", "", fmt.Sprintf("Derive a key from <filetype> using scrypt with %d rounds and a %d bytes salt. Alternatively you could use -derived-salt-key-in for more control.", 1<<20, 32))
+  set.UintVar(&command.options.BlockSize, "block-size", 1<<14, "Encrypt and authenticate blocks of -block-size's length")
 }
 
 func (command *AesGcmDecrypt) ParseFlags(options *flags.GlobalOptions) (error) {
@@ -190,6 +192,10 @@ func (command *AesGcmDecrypt) ParseFlags(options *flags.GlobalOptions) (error) {
 
   if command.options.SaltLen > 64 {
     return errors.New("Option -salt-length of more than 64 bytes is weird, but feel free to reach out to have it increased")
+  }
+
+  if command.options.BlockSize > 1<<32 || command.options.BlockSize == 0 {
+    return errors.Errorf("Option -block-size must be between %d and %d", 1, 1<<32)
   }
 
   switch keySize := command.flagSet.Arg(0); keySize {
