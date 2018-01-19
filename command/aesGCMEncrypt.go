@@ -127,6 +127,23 @@ func (command *AesGcmEncrypt) Init() (error) {
         break
       }
 
+      // counter is going to overflow so we need a new nonce
+      // Once the nonce has been written, let the counter overflows
+      // so it starts at 0 again
+      if command.counter + 1 == 0 {
+        _, err = io.ReadFull(cryptoRand.Reader, nonce[:8])
+        if err != nil {
+          err = errors.Wrap(err, "Failed to generate new nonce")
+          break
+        }
+
+        _, err = command.encWriter.Write(nonce[:8])
+        if err != nil {
+          err = errors.Wrap(err, "Error writing new nonce to writer")
+          break
+        }
+      }
+
       command.counter++
 
       if close {

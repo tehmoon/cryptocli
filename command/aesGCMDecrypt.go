@@ -142,6 +142,22 @@ func (command *AesGcmDecrypt) Init() (error) {
         break
       }
 
+      // Same thing as for encryption, if counter is about to overflow
+      // we read the next 8 bytes which are the new nonce and let
+      // the counter overflow so it resets to 0 naturally
+      if command.counter + 1 == 0 {
+        read, err = command.encReader.Read(nonce[:8])
+        if err != nil {
+          err = errors.Wrap(err, "Error in reading new nonce")
+          return
+        }
+
+        if read != 8 {
+          err = errors.Errorf("Couldn't fully read 8 bytes nonce")
+          return
+        }
+      }
+
       command.counter++
     }
   }()
