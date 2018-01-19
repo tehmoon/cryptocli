@@ -19,10 +19,10 @@ var (
   DefaultAesGcmEncrypt = &AesGcmEncrypt{
     name: "aes-gcm-encrypt",
     usage: &flags.Usage{
-      CommandLine: "<-derived-salt-key-in <filetype> | -password-in <filetype>> [-salt-length int] [key-length]",
+      CommandLine: "<-derived-salt-key-in <filetype> | -password-in <filetype>> [-salt-length int] [-block-size int] [key-length]",
       Other: "Key Length:\n  128: Use 128 bits key security\n  256: Use 256 bits key security",
     },
-    description: "Encrypt and authenticate 16KiB blocks of data using AES algorithm with GCM mode. Padding is not necessary so if EOF is reached, it will return less. Nonce are 8 random bytes followed byte 4 bytes which starts by 0 and are incremented. So it outputs the following <-salt-length> || nonce[:8] || (tag || encrypted data)... . To Decrypt you must read <-salt-length> if you need to derive the key, then reconstruct the nonce by taking the following 8 bytes and appending 0x00000000, then the following 16KiB can be decrypted with GCM. For each 16KiB until EOF -- no padding -- don't forget to reuse the first 8 bytes of the nonce and increment the last 4 bytes ONLY.",
+    description: "Encrypt and authenticate <-block-size>'s blocks of data using AES algorithm with GCM mode. Padding is not necessary so if EOF is reached, it will return less. Nonce are 8 random bytes followed byte 4 bytes which starts by 0 and are incremented. So it outputs the following <-salt-length> || nonce[:8] || (tag || encrypted data)... . To Decrypt you must read <-salt-length> if you need to derive the key, then reconstruct the nonce by taking the following 8 bytes and appending 0x00000000, then the following <-block-size> can be decrypted with GCM. For each <-block-size>'s block until EOF -- no padding -- don't forget to reuse the first 8 bytes of the nonce and increment the last 4 bytes ONLY.",
     options: &AesGcmEncryptOptions{
       NonceSize: 12,
     },
@@ -44,6 +44,7 @@ type AesGcmEncrypt struct {
 }
 
 type AesGcmEncryptOptions struct {
+  BlockSize uint
   NonceSize int
   KeySize int
   SaltLen int
@@ -93,7 +94,7 @@ func (command *AesGcmEncrypt) Init() (error) {
     for {
       counter := nonce[8:]
       binary.BigEndian.PutUint32(counter, command.counter)
-      buff := make([]byte, 1<<14)
+      buff := make([]byte, command.options.BlockSize)
 
       buffRead, err := io.ReadFull(command.reader, buff)
       if err != nil {
@@ -124,6 +125,23 @@ func (command *AesGcmEncrypt) Init() (error) {
       if err != nil {
         err = errors.Wrap(err, "Failed to seal gcm block")
         break
+      }
+
+      // counter is going to overflow so we need a new nonce
+      // Once the nonce has been written, let the counter overflows
+      // so it starts at 0 again
+      if command.counter + 1 == 0 {
+        _, err = io.ReadFull(cryptoRand.Reader, nonce[:8])
+        if err != nil {
+          err = errors.Wrap(err, "Failed to generate new nonce")
+          break
+        }
+
+        _, err = command.encWriter.Write(nonce[:8])
+        if err != nil {
+          err = errors.Wrap(err, "Error writing new nonce to writer")
+          break
+        }
       }
 
       command.counter++
@@ -176,6 +194,7 @@ func (command *AesGcmEncrypt) SetupFlags(set *flag.FlagSet) {
   set.IntVar(&command.options.SaltLen, "salt-length", 32, "Byte to read from -derived-salt-key-in")
   set.StringVar(&command.options.DerivedSaltKeyIn, "derived-salt-key-in", "", fmt.Sprintf("If specified, read the number of bytes from -salt-length for salt and the remaining %d for the key. Will if the key is too long or too short. Cannot be used with -password", command.options.KeySize))
   set.StringVar(&command.options.PasswordIn, "password-in", "", fmt.Sprintf("Derive a key from <filetype> using scrypt with %d rounds and a %d bytes salt. Alternatively you could use -derived-salt-key-in for more control.", 1<<20, 32))
+  set.UintVar(&command.options.BlockSize, "block-size", 1<<14, "Encrypt and authenticate blocks of -block-size's length")
 }
 
 func (command *AesGcmEncrypt) ParseFlags(options *flags.GlobalOptions) (error) {
@@ -186,6 +205,10 @@ func (command *AesGcmEncrypt) ParseFlags(options *flags.GlobalOptions) (error) {
 
   if command.options.SaltLen > 64 {
     return errors.New("Option -salt-length of more than 64 bytes is weird, but feel free to reach out to have it increased")
+  }
+
+  if command.options.BlockSize > 1<<32 || command.options.BlockSize == 0 {
+    return errors.Errorf("Option -block-size must be between %d and %d", 1, 1<<32)
   }
 
   switch keySize := command.flagSet.Arg(0); keySize {
