@@ -113,6 +113,8 @@ FileTypes:
 	Decode ascii value and use it for input. Doesn't work for output
   rand:
 	Rand is a global, shared instance of a cryptographically strong pseudo-random generator. On Linux, Rand uses getrandom(2) if available, /dev/urandom otherwise. On OpenBSD, Rand uses getentropy(2). On other Unix-like systems, Rand reads from /dev/urandom. On Windows systems, Rand uses the CryptGenRandom API. Doesn't work with output.
+  password:
+	Reads a line of input from a terminal without local echo
 
 Filters:
   pem
@@ -254,7 +256,7 @@ Encrypt using AES in GCM mode
 
 ```
 # Read a password from keyboard then encrypt a file using default KDF. Write the output to file
-read -s password; password=${password} ./cryptocli aes-gcm-encrypt -in ascii:blah -password-in env:password -out enc
+./cryptocli aes-gcm-encrypt -in ascii:blah -password-in password: -out enc
 
 # Read a password from keyboard then encrypt a file using custom KDF. Write the output to file
 # WARNING: USING OWN KDF IS FOR PEOPLE WHO KNOW WHAT THEY ARE DOING. MIGHT RESULT IN WEAK KEY
@@ -270,10 +272,10 @@ Decrypt using AES in GCM mode from examples above
 
 ```
 # Read a password from keyboard then decrypt a file using default KDF. Read the input from file
-read -s password; password=${password} ./cryptocli aes-gcm-decrypt -in enc -password-in env:password
+./cryptocli aes-gcm-decrypt -in enc -password-in password:
 
 # Read a password from keyboard then decrypt a file using custom KDF. Read the input from file
-read -s password; password=${password} ./cryptocli aes-gcm-decrypt -in enc -derived-salt-key-in pipe:"cryptocli scrypt -rounds $((1<<16)) -in ascii:\${password} -salt-in hex:\${SALT}"
+read -s password; password=${password} ./cryptocli aes-gcm-decrypt -in enc -derived-salt-key-in pipe:"cryptocli scrypt -rounds $((1<<16)) -in env:\${password} -salt-in env:SALT"
 
 # Decrypt a file using provided key and without salt
 ./cryptocli aes-gcm-decrypt -in enc -derived-salt-key-in hex:0000000000000000000000000000000000000000000000000000000000000000 -salt-length 0
