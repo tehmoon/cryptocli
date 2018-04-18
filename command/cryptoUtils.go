@@ -82,7 +82,7 @@ func DeriveKey(saltDst, saltSrc, key []byte, filetype string) (error) {
 
 // Init filetype as inout.In then fill up saltDst and key buffers
 // if saltSrc is not nil, saltDst must point to saltSrc and saltSrc is read.
-// If filetype is pipe:, saltSrc is hex string encoded and SALT environment variable
+// If filetype is pipe:, saltSrc is passed as SALT environment variable
 // is set.
 func ReadSaltKeyFromFiletype(saltDst, saltSrc, key []byte, filetype string) (error) {
   reader, err := inout.ParseInput(filetype)
@@ -92,7 +92,7 @@ func ReadSaltKeyFromFiletype(saltDst, saltSrc, key []byte, filetype string) (err
 
   if saltSrc != nil {
     if pipeInput, ok := reader.(*inout.PipeInput); ok {
-      pipeInput.Env = append(pipeInput.Env, fmt.Sprintf("SALT=%x", saltSrc))
+      pipeInput.Env = append(pipeInput.Env, "SALT=" + string(saltSrc))
     }
   }
 
