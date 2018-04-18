@@ -18,7 +18,7 @@ var (
   DefaultAesGcmDecrypt = &AesGcmDecrypt{
     name: "aes-gcm-decrypt",
     usage: &flags.Usage{
-      CommandLine: "<-direved-salt-key-n <filetype> | -password-in <filetype>> [-salt-length int] [-block-size int] [key-lenth]",
+      CommandLine: "<-direved-salt-key-in <filetype> | -password-in <filetype>> [-salt-length int] [-block-size int] [key-lenth]",
       Other: "Key Length:\n  128: Use 128 bits key security\n  256: Use 256 bits key security",
     },
     description: "Decrypt and verify authentication of <-block-size>'s block of data using AES algorithm with GCM mode. Nonce of 8 bytes is read after reading the salt to derived the key. Then we append 4 bytes number to the nonce every block starting at 0. Only the first 8 bytes of the nonce is reused. By default it uses scrypt to derive the key but if you want to use your own KDF, aes-gcm-decrypt  will read the salt up to -salt-length then set the environment variable SALT to the hex salt value so you can execute your KDF using the pipe: inout module. If you do that, the salt is expected to be found prepended to the key.",
@@ -203,7 +203,7 @@ func (command *AesGcmDecrypt) SetupFlags(set *flag.FlagSet) {
 func (command *AesGcmDecrypt) ParseFlags(options *flags.GlobalOptions) (error) {
   if (command.options.DerivedSaltKeyIn == "" && command.options.PasswordIn == "") ||
      (command.options.DerivedSaltKeyIn != "" && command.options.PasswordIn != "") {
-    return errors.New("One of -derived-salt-in and -password-in must be used")
+    return errors.New("One of -derived-salt-key in and -password-in must be used")
   }
 
   if command.options.SaltLen > 64 {
