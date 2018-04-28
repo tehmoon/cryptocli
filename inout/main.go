@@ -20,6 +20,7 @@ var (
     DefaultAscii,
     DefaultRand,
     DefaultPassword,
+    DefaultMath,
   }
 )
 
@@ -98,6 +99,8 @@ func parse(inout string) (*url.URL, IO, error) {
       return uri, DefaultRand, nil
     case "password":
       return uri, DefaultPassword, nil
+    case "math":
+      return uri, DefaultMath, nil
     default:
       return nil, nil, errors.Errorf("Error unknown type %s\n", uri.Scheme)
   }

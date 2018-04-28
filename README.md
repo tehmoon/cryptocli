@@ -115,6 +115,8 @@ FileTypes:
 	Rand is a global, shared instance of a cryptographically strong pseudo-random generator. On Linux, Rand uses getrandom(2) if available, /dev/urandom otherwise. On OpenBSD, Rand uses getentropy(2). On other Unix-like systems, Rand reads from /dev/urandom. On Windows systems, Rand uses the CryptGenRandom API. Doesn't work with output.
   password:
 	Reads a line of input from a terminal without local echo
+  math:
+	Evaluate an expression using robpike.io/ivy. Doesn't support output.
 
 Filters:
   pem
