@@ -1,78 +1,78 @@
 package codec
 
 import (
-  "io"
-  "net/url"
+	"io"
+	"net/url"
 )
 
 var DefaultBinary = &Binary{
-  name: "binary",
-  description: "Do nothing in input and nothing in output",
+	name: "binary",
+	description: "Do nothing in input and nothing in output",
 }
 
 type Binary struct {
-  name string
-  description string
+	name string
+	description string
 }
 
 func (codec Binary) Name() (string) {
-  return codec.name
+	return codec.name
 }
 
 func (codec Binary) Description() (string) {
-  return codec.description
+	return codec.description
 }
 
 type BinaryDecoder struct {
-  pipeReader *io.PipeReader
-  pipeWriter *io.PipeWriter
+	pipeReader *io.PipeReader
+	pipeWriter *io.PipeWriter
 }
 
 type BinaryEncoder struct {
-  pipeReader *io.PipeReader
-  pipeWriter *io.PipeWriter
+	pipeReader *io.PipeReader
+	pipeWriter *io.PipeWriter
 }
 
 func (codec Binary) Decoder(values url.Values) (CodecDecoder) {
-  dec := &BinaryDecoder{}
-  dec.pipeReader, dec.pipeWriter = io.Pipe()
-  return dec
+	dec := &BinaryDecoder{}
+	dec.pipeReader, dec.pipeWriter = io.Pipe()
+	return dec
 }
 
 func (codec Binary) Encoder(values url.Values) (CodecEncoder) {
-  enc := &BinaryEncoder{}
-  enc.pipeReader, enc.pipeWriter = io.Pipe()
-  return enc
+	enc := &BinaryEncoder{}
+	enc.pipeReader, enc.pipeWriter = io.Pipe()
+	return enc
 }
 
 func (dec BinaryDecoder) Init() (error) {
-  return nil
+	return nil
 }
 
 func (dec *BinaryDecoder) Read(p []byte) (int, error) {
-  return dec.pipeReader.Read(p)
+	return dec.pipeReader.Read(p)
 }
 
 func (dec *BinaryDecoder) Write(data []byte) (int, error) {
-  return dec.pipeWriter.Write(data)
+	return dec.pipeWriter.Write(data)
 }
 
 func (dec *BinaryDecoder) Close() (error) {
-  return dec.pipeWriter.Close()
+	return dec.pipeWriter.Close()
 }
 
 func (enc BinaryEncoder) Init() (error) {
-  return nil
+	return nil
 }
 
 func (enc *BinaryEncoder) Read(p []byte) (int, error) {
-  return enc.pipeReader.Read(p)
+	return enc.pipeReader.Read(p)
 }
 
 func (enc *BinaryEncoder) Write(data []byte) (int, error) {
-  return enc.pipeWriter.Write(data)
+	return enc.pipeWriter.Write(data)
 }
 
 func (enc *BinaryEncoder) Close() (error) {
-  return enc.pipeWriter.Close()
+	return enc.pipeWriter.Close()
 }

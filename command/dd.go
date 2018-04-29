@@ -1,59 +1,59 @@
 package command
 
 import (
-  "io"
-  "flag"
-  "../flags"
+	"io"
+	"flag"
+	"../flags"
 )
 
 type Dd struct {
-  name string
-  description string
-  pipeReader *io.PipeReader
-  pipeWriter *io.PipeWriter
-  usage *flags.Usage
+	name string
+	description string
+	pipeReader *io.PipeReader
+	pipeWriter *io.PipeWriter
+	usage *flags.Usage
 }
 
 var DefaultDd = &Dd{
-  name: "dd",
-  description: "Copy input to output like the dd tool.",
-  usage: &flags.Usage{
-    CommandLine: "",
-    Other: "",
-  },
+	name: "dd",
+	description: "Copy input to output like the dd tool.",
+	usage: &flags.Usage{
+		CommandLine: "",
+		Other: "",
+	},
 }
 
 func (command *Dd) Init() (error) {
-  command.pipeReader, command.pipeWriter = io.Pipe()
+	command.pipeReader, command.pipeWriter = io.Pipe()
 
-  return nil
+	return nil
 }
 
 func (command Dd) Usage() (*flags.Usage) {
-  return command.usage
+	return command.usage
 }
 
 func (command Dd) Name() (string) {
-  return command.name
+	return command.name
 }
 
 func (command Dd) Description() (string) {
-  return command.description
+	return command.description
 }
 
 func (command Dd) Read(p []byte) (int, error) {
-  return command.pipeReader.Read(p)
+	return command.pipeReader.Read(p)
 }
 
 func (command Dd) Write(data []byte) (int, error) {
-  return command.pipeWriter.Write(data)
+	return command.pipeWriter.Write(data)
 }
 
 func (command Dd) Close() (error) {
-  return command.pipeWriter.Close()
+	return command.pipeWriter.Close()
 }
 
 func (command Dd) SetupFlags(set *flag.FlagSet) {}
 func (command Dd) ParseFlags(options *flags.GlobalOptions) (error) {
-  return nil
+	return nil
 }
