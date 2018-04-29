@@ -46,81 +46,85 @@ cryptocli <command> [<options>] [<arguments>]
 ```
 
 ```
-Usage: ./cryptocli [<Options>] 
+Usage: ./cryptocli [<Options>]
 
 Options:
   -chomp
-    	Get rid of the last \n when not in pipe
+        Get rid of the last \n when not in pipe
   -decoders string
-    	Set a list of codecs separated by ',' to decode input that will be process in the order given (default "binary")
+        Set a list of codecs separated by ',' to decode input that will be process in the order given (default "binary")
   -encoders string
-    	Set a list of codecs separated by ',' to encode output that will be process in the order given (default "binary")
+        Set a list of codecs separated by ',' to encode output that will be process in the order given (default "binary")
   -filters-cmd-in string
-    	List of <filter> in URL format that filters data right after -decoders
+        List of <filter> in URL format that filters data right after -decoders
   -filters-cmd-out string
-    	List of <filter> in URL format that filters data right before -encoders
+        List of <filter> in URL format that filters data right before -encoders
   -filters-in string
-    	List of <filter> in URL format that filters data right before -decoders
+        List of <filter> in URL format that filters data right before -decoders
   -filters-out string
-    	List of <filter> in URL format that filters data right after -encoders
+        List of <filter> in URL format that filters data right after -encoders
   -in string
-    	Input <fileType> method
+        Input <fileType> method
   -out string
-    	Output <fileType> method
+        Output <fileType> method
   -tee-cmd-in string
-    	Copy output after -decoders and before <command> to <fileType>
+        Copy output after -decoders and before <command> to <fileType>
   -tee-cmd-out string
-    	Copy output after <command> and before -encoders to <fileType>
+        Copy output after <command> and before -encoders to <fileType>
   -tee-in string
-    	Copy output before -encoders to <fileType>
+        Copy output before -encoders to <fileType>
   -tee-out string
-    	Copy output after -encoders to <fileType>
+        Copy output after -encoders to <fileType>
 
 Codecs:
   hex
-	hex encode output and hex decode input
+        hex encode output and hex decode input
   binary
-	Do nothing in input and nothing in output
+        Do nothing in input and nothing in output
   binary-string
-	Take ascii string of 1 and 0 in input and decode it to binary. A byte is always 8 characters number. Does the opposite for output
+        Take ascii string of 1 and 0 in input and decode it to binary. A byte is always 8 characters number. Does the opposite for output
   base64
-	base64 decode input and base64 encode output
+        base64 decode input and base64 encode output
   gzip
-	gzip compress output and gzip decompress input
+        gzip compress output and gzip decompress input
   hexdump
-	Encode output to hexdump -c. Doesn't support decoding
+        Encode output to hexdump -c. Doesn't support decoding
+  byte-string
+        Decode and encode in a byte string format
 
 FileTypes:
   file://
-	Read from a file or write to a file. Default when no <filetype> is specified. Truncate output file unless OUTFILENOTRUNC=1 in environment variable.
+        Read from a file or write to a file. Default when no <filetype> is specified. Truncate output file unless OUTFILENOTRUNC=1 in environment variable.
   pipe:
-	Run a command in a sub shell. Either write to the command's stdin or read from its stdout.
+        Run a command in a sub shell. Either write to the command's stdin or read from its stdout.
   https://
-	Get https url or post the output to https. Use INHTTPSNOVERIFY=1 and/or OUTHTTPSNOVERIFY=1 environment variables to disable certificate check. Max redirects count is 3. Will fail if scheme changes.
+        Get https url or post the output to https. Use INHTTPSNOVERIFY=1 and/or OUTHTTPSNOVERIFY=1 environment variables to disable certificate check. Max redirects count is 3. Will fail if scheme changes.
   http://
-	Get http url or post the output to https. Max redirects count is 3. Will fail if scheme changes.
+        Get http url or post the output to https. Max redirects count is 3. Will fail if scheme changes.
   env:
-	Read and unset environment variable. Doesn't work for output
+        Read and unset environment variable. Doesn't work for output
   readline:
-	Read lines from stdin until WORD is reached.
+        Read lines from stdin until WORD is reached.
   s3://
-	Either upload or download from s3.
+        Either upload or download from s3.
   null:
-	Behaves like /dev/null on *nix system
+        Behaves like /dev/null on *nix system
   hex:
-	Decode hex value and use it for input. Doesn't work for output
+        Decode hex value and use it for input. Doesn't work for output
   ascii:
-	Decode ascii value and use it for input. Doesn't work for output
+        Decode ascii value and use it for input. Doesn't work for output
   rand:
-	Rand is a global, shared instance of a cryptographically strong pseudo-random generator. On Linux, Rand uses getrandom(2) if available, /dev/urandom otherwise. On OpenBSD, Rand uses getentropy(2). On other Unix-like systems, Rand reads from /dev/urandom. On Windows systems, Rand uses the CryptGenRandom API. Doesn't work with output.
+        Rand is a global, shared instance of a cryptographically strong pseudo-random generator. On Linux, Rand uses getrandom(2) if available, /dev/urandom otherwise. On OpenBSD, Rand uses getentropy(2). On other Unix-like systems, Rand reads from /dev/urandom. On Windows systems, Rand uses the CryptGenRandom API. Doesn't work with output.
   password:
-	Reads a line of input from a terminal without local echo
+        Reads a line of input from a terminal without local echo
+  math:
+        Evaluate an expression using robpike.io/ivy. Doesn't support output.
 
 Filters:
   pem
-	Filter PEM objects. Options: type=<PEM type> start-at=<number> stop-at=<number>. Type will filter only PEM objects with this type. Start-at will discard the first <number> PEM objects. Stop-at will stop at PEM object <number>.
+        Filter PEM objects. Options: type=<PEM type> start-at=<number> stop-at=<number>. Type will filter only PEM objects with this type. Start-at will discard the first <number> PEM objects. Stop-at will stop at PEM object <number>.
   byte-counter
-	Keep track of in and out bytes. Options: start-at=<number> stop-at=[+]<number>. Start-at option will discard the first <number> bytes. The Stop-at option will stop at byte <number>. Position <number> can be express in base16 with 0x/0X, base2 with 0b/0B or 0 for base8. If a + sign is found in the stop-at option; start-at <number> is added to stop-at <number>.
+        Keep track of in and out bytes. Options: start-at=<number> stop-at=[+]<number>. Start-at option will discard the first <number> bytes. The Stop-at option will stop at byte <number>. Position <number> can be express in base16 with 0x/0X, base2 with 0b/0B or 0 for base8. If a + sign is found in the stop-at option; start-at <number> is added to stop-at <number>.
 ```
 
 ## Examples

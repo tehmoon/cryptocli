@@ -1,64 +1,64 @@
 package codec
 
 import (
-  "io"
-  "encoding/hex"
-  "net/url"
+	"io"
+	"encoding/hex"
+	"net/url"
 )
 
 var DefaultHexdump = &Hexdump{
-  name: "hexdump",
-  description: "Encode output to hexdump -c. Doesn't support decoding",
+	name: "hexdump",
+	description: "Encode output to hexdump -c. Doesn't support decoding",
 }
 
 type Hexdump struct {
-  name string
-  description string
+	name string
+	description string
 }
 
 func (codec Hexdump) Name() (string) {
-  return codec.name
+	return codec.name
 }
 
 func (codec Hexdump) Description() (string) {
-  return codec.description
+	return codec.description
 }
 
 type HexdumpEncoder struct {
-  pipeReader *io.PipeReader
-  pipeWriter *io.PipeWriter
-  dumper io.WriteCloser
+	pipeReader *io.PipeReader
+	pipeWriter *io.PipeWriter
+	dumper io.WriteCloser
 }
 
 func (codec Hexdump) Decoder(values url.Values) (CodecDecoder) {
-  return nil
+	return nil
 }
 
 func (codec Hexdump) Encoder(values url.Values) (CodecEncoder) {
-  enc := &HexdumpEncoder{}
-  enc.pipeReader, enc.pipeWriter = io.Pipe()
-  enc.dumper = hex.Dumper(enc.pipeWriter)
+	enc := &HexdumpEncoder{}
+	enc.pipeReader, enc.pipeWriter = io.Pipe()
+	enc.dumper = hex.Dumper(enc.pipeWriter)
 
-  return enc
+	return enc
 }
 
 func (encoder *HexdumpEncoder) Init() (error) {
-  return nil
+	return nil
 }
 
 func (encoder *HexdumpEncoder) Write(data []byte) (int, error) {
-  return encoder.dumper.Write(data)
+	return encoder.dumper.Write(data)
 }
 
 func (encoder *HexdumpEncoder) Read(p []byte) (int, error) {
-  return encoder.pipeReader.Read(p)
+	return encoder.pipeReader.Read(p)
 }
 
 func (encoder *HexdumpEncoder) Close() (error) {
-  err := encoder.dumper.Close()
-  if err != nil {
-    return err
-  }
+	err := encoder.dumper.Close()
+	if err != nil {
+		return err
+	}
 
-  return encoder.pipeWriter.Close()
+	return encoder.pipeWriter.Close()
 }
