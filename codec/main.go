@@ -17,6 +17,7 @@ var (
     DefaultBase64,
     DefaultGzip,
     DefaultHexdump,
+    DefaultByteString,
   }
 )
 
@@ -77,6 +78,8 @@ func Parse(codecStr string) (*CodecValues, error) {
       return &CodecValues{Codec: DefaultGzip, Values: values,}, nil
     case "hexdump":
       return &CodecValues{Codec: DefaultHexdump, Values: values,}, nil
+    case "byte-string":
+      return &CodecValues{Codec: DefaultByteString, Values: values,}, nil
     default:
       return nil, errors.Wrapf(ErrCodecUnknown, "Error parsing codec type: %s", codec)
   }
