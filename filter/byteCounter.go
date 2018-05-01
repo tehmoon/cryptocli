@@ -6,12 +6,13 @@ import (
 	"io"
 	"github.com/tehmoon/errors"
 	"math/big"
+	humanize "github.com/dustin/go-humanize"
 )
 
 var (
 	DefaultByteCounter = &ByteCounter{
 		name: "byte-counter",
-		description: "Keep track of in and out bytes. Options: start-at=<number> stop-at=[+]<number>. Start-at option will discard the first <number> bytes. The Stop-at option will stop at byte <number>. Position <number> can be express in base16 with 0x/0X, base2 with 0b/0B or 0 for base8. If a + sign is found in the stop-at option; start-at <number> is added to stop-at <number>.",
+		description: "Keep track of in and out bytes. Options: start-at=<number> stop-at=[+]<number>. Start-at option will discard the first <number> bytes. The Stop-at option will stop at byte <number>. Position <number> can be express in base16 with 0x/0X, base2 with 0b/0B, 0 for base8 or with units: KB, KiB.. . If a + sign is found in the stop-at option; start-at <number> is added to stop-at <number>.",
 	}
 )
 
@@ -88,9 +89,9 @@ func (bcf *ByteCounterFilter) Init() (error) {
 			if stopAt[0] == '+' {
 				n1 := new(big.Int).SetInt64(options.StartAt)
 				n2 := new(big.Int).SetInt64(options.StopAt)
+
 				n := new(big.Int).Add(n1, n2)
 				ok = n.IsInt64()
-
 				if ! ok {
 					return errors.Errorf("Option stop-at overflows int64")
 				}
@@ -125,6 +126,7 @@ func (bcf *ByteCounterFilter) Init() (error) {
 			if err == io.EOF {
 				err = nil
 			}
+
 			return
 		}
 
@@ -156,7 +158,12 @@ func parseBytePositionArgument(mark string) (int64, bool) {
 
 	i, ok := new(big.Int).SetString(mark, 0)
 	if ! ok {
-		return 0, false
+		n, err := humanize.ParseBytes(mark)
+		if err != nil {
+			return 0, false
+		}
+
+		return int64(n), true
 	}
 
 	ok = i.IsInt64()
