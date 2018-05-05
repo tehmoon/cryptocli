@@ -119,6 +119,8 @@ FileTypes:
         Reads a line of input from a terminal without local echo
   math:
         Evaluate an expression using robpike.io/ivy. Doesn't support output.
+  tcp://
+        Connect to tcp server and either read or write data
 
 Filters:
   pem

@@ -21,6 +21,7 @@ var (
 		DefaultRand,
 		DefaultPassword,
 		DefaultMath,
+		DefaultTcp,
 	}
 )
 
@@ -101,6 +102,8 @@ func parse(inout string) (*url.URL, IO, error) {
 			return uri, DefaultPassword, nil
 		case "math":
 			return uri, DefaultMath, nil
+		case "tcp":
+			return uri, DefaultTcp, nil
 		default:
 			return nil, nil, errors.Errorf("Error unknown type %s\n", uri.Scheme)
 	}
