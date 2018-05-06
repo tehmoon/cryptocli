@@ -121,6 +121,8 @@ FileTypes:
         Evaluate an expression using robpike.io/ivy. Doesn't support output.
   tcp://
         Connect to tcp server and either read or write data
+  tcp-server://
+        Listen tcp on host:port and either read or write data
 
 Filters:
   pem
