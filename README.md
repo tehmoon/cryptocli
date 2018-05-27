@@ -29,14 +29,15 @@ There are two ways you could install `cryptocli`:
 
 ```
 Commands:
-  dd:  Copy input to output like the dd tool.
-  dgst:  Hash from input
-  pbkdf2:  Derive a key from input using the PBKDF2 algorithm
-  scrypt:  Derive a key from input using the scrypt algorithm
-  pipe:  Execute a command and attach stdin and stdout to the pipeline
-  get-certs:  Establish tls connection and get the certificates. Doesn't use any input.
-  aes-gcm-encrypt:  Encrypt and authenticate 16KiB blocks of data using AES algorithm with GCM mode. Padding is not necessary so if EOF is reached, it will return less. Nonce are 8 random bytes followed byte 4 bytes which starts by 0 and are incremented. So it outputs the following <-salt-length> || nonce[:8] || (tag || encrypted data)... . To Decrypt you must read <-salt-length> if you need to derive the key, then reconstruct the nonce by taking the following 8 bytes and appending 0x00000000, then the following 16KiB can be decrypted with GCM. For each 16KiB until EOF -- no padding -- don't forget to reuse the first 8 bytes of the nonce and increment the last 4 bytes ONLY.
-  aes-gcm-decrypt:  Decrypt and verify authentication of 16KiB block of data using AES algorithm with GCM mode. Nonce of 8 bytes is read after reading the salt to derived the key. Then we append 4 bytes number to the nonce every block starting at 0. Only the first 8 bytes of the nonce is reused. By default it uses scrypt to derive the key but if you want to use your own KDF, aes-gcm-decrypt  will read the salt up to -salt-length then set the environment variable SALT to the hex salt value so you can execute your KDF using the pipe: inout module. If you do that, the salt is expected to be found prepended to the key.
+	dd:  Copy input to output like the dd tool.
+	dgst:  Hash the content of stdin
+	pbkdf2:  Derive a key from input using the PBKDF2 algorithm
+	scrypt:  Derive a key from input using the scrypt algorithm
+	pipe:  Execute a command and attach stdin and stdout to the pipeline
+	get-certs:  Establish tls connection and get the certificates. Doesn't use any input.
+	aes-gcm-encrypt:  Encrypt and authenticate <-block-size>'s blocks of data using AES algorithm with GCM mode. Padding is not necessary so if EOF is reached, it will return less. Nonce are 8 random bytes followed byte 4 bytes which starts by 0 and are incremented. So it outputs the following <-salt-length> || nonce[:8] || (tag || encrypted data)... . To Decrypt you must read <-salt-length> if you need to derive the key, then reconstruct the nonce by taking the following 8 bytes and appending 0x00000000, then the following <-block-size> can be decrypted with GCM. For each <-block-size>'s block until EOF -- no padding -- don't forget to reuse the first 8 bytes of the nonce and increment the last 4 bytes ONLY.
+	aes-gcm-decrypt:  Decrypt and verify authentication of <-block-size>'s block of data using AES algorithm with GCM mode. Nonce of 8 bytes is read after reading the salt to derived the key. Then we append 4 bytes number to the nonce every block starting at 0. Only the first 8 bytes of the nonce is reused. By default it uses scrypt to derive the key but if you want to use your own KDF, aes-gcm-decrypt  will read the salt up to -salt-length then set the environment variable SALT to the hex salt value so you can execute your KDF using the pipe: inout module. If you do that, the salt is expected to be found prepended to the key.
+	code-sign-certs:  Parse a windows PE file and extract certificate in PEM form. It will bufferize the executable to disk instead of memory.
 ```
 
 ## Usage
