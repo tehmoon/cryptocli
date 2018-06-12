@@ -96,19 +96,27 @@ func (command *CodeSignCerts) ParseFlags(options *flags.GlobalOptions) (error) {
 	return nil
 }
 
+func CodeSignCertsParseHeader64(header *pe.OptionalHeader64, file io.ReaderAt) ([]byte, *asn1.ObjectIdentifier, error) {
+	return CodeSignCertsExtractCerts(header.DataDirectory, file)
+}
+
 func CodeSignCertsParseHeader32(header *pe.OptionalHeader32, file io.ReaderAt) ([]byte, *asn1.ObjectIdentifier, error) {
-	for i, dr := range header.DataDirectory {
+	return CodeSignCertsExtractCerts(header.DataDirectory, file)
+}
+
+func CodeSignCertsExtractCerts(dds [16]pe.DataDirectory, file io.ReaderAt) ([]byte, *asn1.ObjectIdentifier, error) {
+	for i, dd := range dds {
 		if i == 4 {
-			if dr.VirtualAddress == 0 {
+			if dd.VirtualAddress == 0 {
 				continue
 			}
 
-			buff, err := ExtractReadAt(file, 4, int64(dr.VirtualAddress))
+			buff, err := ExtractReadAt(file, 4, int64(dd.VirtualAddress))
 			if err != nil {
 				return nil, nil, errors.Wrap(err, "Error reading certificate table's size")
 			}
 
-			start := dr.VirtualAddress + 8
+			start := dd.VirtualAddress + 8
 			stop := start + binary.LittleEndian.Uint32(buff)
 
 			buff, err = ExtractReadAt(file, int(stop - start - 8), int64(start))
@@ -159,7 +167,7 @@ func StartCodeSignCerts(reader io.Reader, file *os.File, writer io.WriteCloser, 
 		case *pe.OptionalHeader32:
 			buff, ob, err = CodeSignCertsParseHeader32(header, file)
 		case *pe.OptionalHeader64:
-			err = errors.Wrap(err, "*pe.OptionalHeader64 is not a supported Portable Executable format")
+			buff, ob, err = CodeSignCertsParseHeader64(header, file)
 	}
 
 	if err != nil {
