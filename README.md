@@ -86,6 +86,8 @@ Codecs:
         Take ascii string of 1 and 0 in input and decode it to binary. A byte is always 8 characters number. Does the opposite for output
   base64
         base64 decode input and base64 encode output
+  base32
+        base32 decode input and base32 encode output
   gzip
         gzip compress output and gzip decompress input
   hexdump
