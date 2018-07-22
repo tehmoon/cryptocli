@@ -74,6 +74,8 @@ func Parse(codecStr string) (*CodecValues, error) {
 			return &CodecValues{Codec: DefaultBinaryString, Values: values,}, nil
 		case "base64":
 			return &CodecValues{Codec: DefaultBase64, Values: values,}, nil
+		case "base32":
+			return &CodecValues{Codec: DefaultBase32, Values: values,}, nil
 		case "gzip":
 			return &CodecValues{Codec: DefaultGzip, Values: values,}, nil
 		case "hexdump":
