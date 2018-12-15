@@ -23,12 +23,14 @@ type HTTP struct {
 	reader io.Reader
 	writer io.WriteCloser
 	req *http.Request
+	line bool
 }
 
 func (m *HTTP) SetFlagSet(fs *pflag.FlagSet) {
 	fs.StringVar(&m.url, "url", "", "HTTP url to query")
 	fs.StringVar(&m.method, "method", "GET", "Set the method to query")
 	fs.BoolVar(&m.data, "data", false, "Send data from the pipeline to the server")
+	fs.BoolVar(&m.line, "line", false, "Read lines from the connection")
 }
 
 func (m *HTTP) In(in chan *Message) (chan *Message) {
@@ -46,6 +48,10 @@ func (m *HTTP) Out(out chan *Message) (chan *Message) {
 func (m *HTTP) Init(global *GlobalFlags) (error) {
 	if m.data {
 		m.reader, m.writer = io.Pipe()
+	}
+
+	if global.Line {
+		m.line = global.Line
 	}
 
 	req, err := http.NewRequest(m.method, m.url, m.reader)
@@ -67,7 +73,7 @@ func (m HTTP) Start() {
 		wait := make(chan struct{}, 0)
 
 		go httpStartIn(m.in, m.writer, wait, m.sync)
-		go httpStartOut(m.out, m.req, wait, m.sync)
+		go httpStartOut(m.out, m.req, m.line, wait, m.sync)
 	}()
 }
 
@@ -103,7 +109,7 @@ func httpStartIn(in chan *Message, writer io.WriteCloser, wait chan struct{}, wg
 	writer.Close()
 }
 
-func httpStartOut(out chan *Message, req *http.Request, wait chan struct{}, wg *sync.WaitGroup) {
+func httpStartOut(out chan *Message, req *http.Request, line bool, wait chan struct{}, wg *sync.WaitGroup) {
 	defer wg.Done()
 	defer close(out)
 
@@ -118,9 +124,16 @@ func httpStartOut(out chan *Message, req *http.Request, wait chan struct{}, wg *
 	}
 	defer resp.Body.Close()
 
-	err = ReadBytesStep(resp.Body, func (payload []byte) {
+	cb := func(payload []byte) {
 		SendMessage(payload, out)
-	})
+	}
+
+	if line {
+		err = ReadDelimStep(resp.Body, '\n', cb)
+	} else {
+		err = ReadBytesStep(resp.Body, cb)
+	}
+
 	if err != nil {
 		log.Println(errors.Wrap(err, "Error reading body of http response"))
 		return

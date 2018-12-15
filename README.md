@@ -43,8 +43,8 @@ cryptocli -- \
 ### tcp-server -> http: proxy tcp to http with line buffering
 
 ```
-cryptocli -- \
-  tcp-server --listen :8081 --line -- \
+cryptocli --line -- \
+  tcp-server --listen :8081 -- \
   http --url http://localhost:8080 --data
 ```
 
