@@ -7,6 +7,7 @@ import (
 	"sync"
 	"log"
 	"io"
+	"crypto/tls"
 )
 
 func init() {
@@ -24,6 +25,7 @@ type HTTP struct {
 	writer io.WriteCloser
 	req *http.Request
 	line bool
+	insecure bool
 }
 
 func (m *HTTP) SetFlagSet(fs *pflag.FlagSet) {
@@ -31,6 +33,7 @@ func (m *HTTP) SetFlagSet(fs *pflag.FlagSet) {
 	fs.StringVar(&m.method, "method", "GET", "Set the method to query")
 	fs.BoolVar(&m.data, "data", false, "Send data from the pipeline to the server")
 	fs.BoolVar(&m.line, "line", false, "Read lines from the connection")
+	fs.BoolVar(&m.insecure, "insecure", false, "Don't valid the TLS certificate chain")
 }
 
 func (m *HTTP) In(in chan *Message) (chan *Message) {
@@ -74,6 +77,7 @@ func (m HTTP) Start() {
 
 		options := &HTTPOptions{
 			Line: m.line,
+			Insecure: m.insecure,
 		}
 
 		go httpStartIn(m.in, m.writer, wait, m.sync)
@@ -115,13 +119,38 @@ func httpStartIn(in chan *Message, writer io.WriteCloser, wait chan struct{}, wg
 
 type HTTPOptions struct {
 	Line bool
+	Insecure bool
+}
+
+// Copy http.DefaultTransport in order to change it and keep the defaults
+// Returns http.DefaultTransport if cannot assert the http.RoundTripper interface
+func httpCreateTransport(options *HTTPOptions) (http.RoundTripper) {
+	var (
+		tr = &http.Transport{}
+		rt = http.DefaultTransport
+	)
+
+	transport, ok := http.DefaultTransport.(*http.Transport)
+	if ok {
+		*tr = *transport
+
+		tr.TLSClientConfig = &tls.Config{
+			InsecureSkipVerify: options.Insecure,
+		}
+
+		rt = tr
+	}
+
+	return rt
 }
 
 func httpStartOut(out chan *Message, req *http.Request, options *HTTPOptions, wait chan struct{}, wg *sync.WaitGroup) {
 	defer wg.Done()
 	defer close(out)
 
-	client := &http.Client{}
+	client := &http.Client{
+		Transport: httpCreateTransport(options),
+	}
 
 	<- wait
 
