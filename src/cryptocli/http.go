@@ -72,8 +72,12 @@ func (m HTTP) Start() {
 		// otherwise for some reason, it makes the http client hang
 		wait := make(chan struct{}, 0)
 
+		options := &HTTPOptions{
+			Line: m.line,
+		}
+
 		go httpStartIn(m.in, m.writer, wait, m.sync)
-		go httpStartOut(m.out, m.req, m.line, wait, m.sync)
+		go httpStartOut(m.out, m.req, options, wait, m.sync)
 	}()
 }
 
@@ -109,7 +113,11 @@ func httpStartIn(in chan *Message, writer io.WriteCloser, wait chan struct{}, wg
 	writer.Close()
 }
 
-func httpStartOut(out chan *Message, req *http.Request, line bool, wait chan struct{}, wg *sync.WaitGroup) {
+type HTTPOptions struct {
+	Line bool
+}
+
+func httpStartOut(out chan *Message, req *http.Request, options *HTTPOptions, wait chan struct{}, wg *sync.WaitGroup) {
 	defer wg.Done()
 	defer close(out)
 
@@ -128,7 +136,7 @@ func httpStartOut(out chan *Message, req *http.Request, line bool, wait chan str
 		SendMessage(payload, out)
 	}
 
-	if line {
+	if options.Line {
 		err = ReadDelimStep(resp.Body, '\n', cb)
 	} else {
 		err = ReadBytesStep(resp.Body, cb)
