@@ -63,16 +63,17 @@ Usage of cryptocli [options] -- <module> [options] -- <module> [options] -- ...
       --line   Read buffer per line for all modules
       --std    Read from stdin and writes to stdout instead of setting both modules
 List of all modules:
+  lower: Lowercase all ascii characters
+  tcp-server: Listens TCP and wait for a single connection to complete
+  tcp: Connects to TCP
+  file: Reads from a file or write to a file.
+  gzip: Gzip compress
+  http: Connects to an HTTP webserver
   http-server: Create an http web webserver
   s3: Downloads or uploads a file from s3
-  stdout: Writes to stdout
-  tcp-server: Listens TCP and wait for a single connection to complete
-  upper: Uppercase all ascii characters
-  file: Reads from a file or write to a file.
-  http: Connects to an HTTP webserver
-  lower: Lowercase all ascii characters
   stdin: Reads from stdin
-  tcp: Connects to TCP
+  stdout: Writes to stdout
+  upper: Uppercase all ascii characters
 ```
 
 ## Design
