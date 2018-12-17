@@ -142,9 +142,9 @@ List of modules:
   * tee
   * fork
   * count bytes
-  * http-server
   * pem
   * dgst
+  * gunzip
 
 Feature ideas:
 
