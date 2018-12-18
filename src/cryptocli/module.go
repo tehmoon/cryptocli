@@ -78,7 +78,7 @@ func (m *ModuleList) Register(name, desc string, f func() (Module)) {
 
 	_, found := m.modules[name]
 	if found {
-		fmt.Fprintf(os.Stderr, "Module %q is already in the list\n", "name")
+		fmt.Fprintf(os.Stderr, "Module %q is already in the list\n", name)
 		os.Exit(1)
 	}
 
