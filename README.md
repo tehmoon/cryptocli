@@ -145,7 +145,9 @@ List of modules:
   * count bytes
   * pem
   * dgst
+  * http serve file
 
 Feature ideas:
 
   * tags
+  * add raw tty signal for stdin when tty
