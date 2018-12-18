@@ -19,7 +19,7 @@ compile() {
 
 	GOPATH=${GOPATH} GOOS=${GOOS} GOARCH=${GOARCH} go build -o "${NAME}" -tags netgo -ldflags "-w -extldflags \"-static\""
 	echo "Done compiling for ${GOOS} ${GOARCH}"
-	gzip "${NAME}"
+	./cryptocli -- file --path "${NAME}" --read -- gzip -- file --path "${NAME}.gz" --write
 }
 
 compile darwin amd64
