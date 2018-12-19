@@ -15,7 +15,6 @@ type Flags struct {
 }
 
 type GlobalFlags struct {
-	Line bool
 	Std bool
 }
 
@@ -51,7 +50,6 @@ func ParseFlags() (*Flags, error) {
 	flags := NewFlags()
 
 	root := pflag.NewFlagSet("root", pflag.ContinueOnError)
-	root.BoolVar(&flags.Global.Line, "line", false, "Read buffer per line for all modules")
 	root.BoolVar(&flags.Global.Std, "std", false, "Read from stdin and writes to stdout instead of setting both modules")
 	root.Usage = SetRootUsage(root)
 	err := root.Parse(os.Args[1:])

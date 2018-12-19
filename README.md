@@ -19,7 +19,7 @@ This is still a work in progress as I am migrating modules one by one with new f
 ### Stdin -> tcp-server -> stdout with line buffering
 
 ```
-cryptocli --std --line -- \
+cryptocli --std -- \
   tcp-server --listen :8080
 ```
 
@@ -40,10 +40,10 @@ cryptocli -- \
   file --write --path /tmp/google.com --mode 0600
 ```
 
-### tcp-server -> http: proxy tcp to http with line buffering
+### tcp-server -> http: proxy tcp to http
 
 ```
-cryptocli --line -- \
+cryptocli -- \
   tcp-server --listen :8081 -- \
   http --url http://localhost:8080 --data
 ```
@@ -60,22 +60,21 @@ It will stop and show the help until there are no help flags remaining.
 
 ```
 Usage of cryptocli [options] -- <module> [options] -- <module> [options] -- ...
-      --line   Read buffer per line for all modules
-      --std    Read from stdin and writes to stdout instead of setting both modules
+      --std   Read from stdin and writes to stdout instead of setting both modules
 List of all modules:
-  s3: Downloads or uploads a file from s3
+  gzip: Gzip compress
+  lower: Lowercase all ascii characters
   stdin: Reads from stdin
-  tcp: Connects to TCP
+  stdout: Writes to stdout
   tcp-server: Listens TCP and wait for a single connection to complete
   upper: Uppercase all ascii characters
-  gzip: Gzip compress
+  tcp: Connects to TCP
+  file: Reads from a file or write to a file.
+  gunzip: Gunzip de-compress
   hex: Hex de-compress
   http: Connects to an HTTP webserver
   http-server: Create an http web webserver
-  lower: Lowercase all ascii characters
-  stdout: Writes to stdout
-  file: Reads from a file or write to a file.
-  gunzip: Gunzip de-compress
+  s3: Downloads or uploads a file from s3
 ```
 
 ## Design

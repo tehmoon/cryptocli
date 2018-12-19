@@ -18,7 +18,6 @@ type Stdin struct {
 	in chan *Message
 	out chan *Message
 	sync *sync.WaitGroup
-	line bool
 }
 
 func (m *Stdin) Init(global *GlobalFlags) (error) {
@@ -30,17 +29,13 @@ func (m *Stdin) Init(global *GlobalFlags) (error) {
 
 	stdinMutex.Init = true
 
-	if global.Line {
-		m.line = true
-	}
-
 	return nil
 }
 
 func (m Stdin) Start() {
 	m.sync.Add(2)
 
-	go stdinStartOut(m.out, m.line, m.sync)
+	go stdinStartOut(m.out, m.sync)
 	go stdinStartIn(m.in, m.sync)
 }
 
@@ -66,19 +61,8 @@ func NewStdin() (Module) {
 	}
 }
 
-func stdinStartOut(write chan *Message, line bool, wg *sync.WaitGroup) {
-	var err error
-
-	cb := func(payload []byte) {
-		SendMessage(payload, write)
-	}
-
-	if line {
-		err = ReadDelimStep(os.Stdin, '\n', cb)
-	} else {
-		err = ReadBytesStep(os.Stdin, cb)
-	}
-
+func stdinStartOut(write chan *Message, wg *sync.WaitGroup) {
+	err := ReadBytesSendMessages(os.Stdin, write)
 	if err != nil {
 		log.Println(errors.Wrap(err, "Error copying stdin"))
 	}
@@ -96,6 +80,4 @@ func stdinStartIn(read chan *Message, wg *sync.WaitGroup) {
 	wg.Done()
 }
 
-func (m *Stdin) SetFlagSet(fs *pflag.FlagSet) {
-	fs.BoolVar(&m.line, "line", false, "Read lines from the stdin")
-}
+func (m *Stdin) SetFlagSet(fs *pflag.FlagSet) {}

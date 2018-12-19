@@ -2,55 +2,54 @@ package main
 
 import (
 	"io"
-	"bufio"
 )
 
 const (
 	ReaderMaxPowerSize uint = 24
-	ReaderMinPowerSize uint = 10
+	ReaderMinPowerSize uint = 8
 )
 
+func ReadBytesSendMessages(r io.Reader, c chan *Message) (error) {
+	return ReadBytesStep(r, func(payload []byte) {
+		SendMessage(payload, c)
+	})
+}
+
+// Allocate a buffer and read from the reader.
+// If the buffer is full, next read will allocate more.
+// If the buffer is less than full for 2 times in a row,
+// it will allocate less on the next run.
 func ReadBytesStep(r io.Reader, cb func([]byte)) (error) {
 	var (
 		err error
 		i int
 		power = ReaderMinPowerSize
+		down = 0
 	)
 
 	for {
-		buff := make([]byte, 2 << power)
+		l := 2 << power
+		buff := make([]byte, l)
 
-		i, err = io.ReadFull(r, buff)
+		i, err = r.Read(buff)
 		if err != nil {
 			cb(buff[:i])
 			break
 		}
 
-		cb(buff)
+		cb(buff[:i])
 
-		if i == 2<<power && power != ReaderMaxPowerSize {
+		if i >= l && power != ReaderMaxPowerSize {
 			power++
-		}
-	}
-
-	return err
-}
-
-func ReadDelimStep(r io.Reader, delim byte, cb func([]byte)) (error) {
-	var (
-		reader = bufio.NewReader(r)
-		b []byte
-		err error
-	)
-
-	for {
-		b, err = reader.ReadBytes(delim)
-		if err != nil {
-			cb(b)
-			break
+			continue
 		}
 
-		cb(b)
+		down++
+
+		if down == 3 && power != ReaderMaxPowerSize {
+			power--
+			down = 0
+		}
 	}
 
 	return err

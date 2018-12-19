@@ -18,14 +18,9 @@ type TCPServer struct {
 	sync *sync.WaitGroup
 	addr string
 	listener *net.TCPListener
-	line bool
 }
 
 func (m *TCPServer) Init(global *GlobalFlags) (error) {
-	if global.Line {
-		m.line = true
-	}
-
 	addr, err := net.ResolveTCPAddr("tcp", m.addr)
 	if err != nil {
 		return errors.Wrap(err, "Unable to resolve tcp address")
@@ -54,7 +49,7 @@ func (m TCPServer) Start() {
 		}
 
 		go tcpServerStartIn(conn, m.in, m.sync)
-		go tcpServerStartOut(conn, m.out, m.line, m.sync)
+		go tcpServerStartOut(conn, m.out, m.sync)
 	}()
 }
 
@@ -71,19 +66,8 @@ func tcpServerStartIn(conn *net.TCPConn, in chan *Message, wg *sync.WaitGroup) {
 	wg.Done()
 }
 
-func tcpServerStartOut(conn *net.TCPConn, out chan *Message, line bool, wg *sync.WaitGroup) {
-	var err error
-
-	cb := func(payload []byte) {
-		SendMessage(payload, out)
-	}
-
-	if line {
-		err = ReadDelimStep(conn, '\n', cb)
-	} else {
-		err = ReadBytesStep(conn, cb)
-	}
-
+func tcpServerStartOut(conn *net.TCPConn, out chan *Message, wg *sync.WaitGroup) {
+	err := ReadBytesSendMessages(conn, out)
 	if err != nil {
 		log.Println(errors.Wrap(err, "Error reading tcp connection in tcp-server"))
 	}
@@ -113,7 +97,6 @@ func (m *TCPServer) Out(out chan *Message) (chan *Message) {
 
 func (m *TCPServer) SetFlagSet(fs *pflag.FlagSet) {
 	fs.StringVar(&m.addr, "listen", "", "Listen on addr:port. If port is 0, random port will be assigned")
-	fs.BoolVar(&m.line, "line", false, "Read lines from the socket")
 }
 
 func NewTCPServer() (Module) {

@@ -19,14 +19,9 @@ type Gunzip struct {
 	wg *sync.WaitGroup
 	reader *io.PipeReader
 	writer *io.PipeWriter
-	line bool
 }
 
 func (m *Gunzip) Init(global *GlobalFlags) (error) {
-	if global.Line {
-		m.line = global.Line
-	}
-
 	m.reader, m.writer = io.Pipe()
 
 	return nil
@@ -36,7 +31,7 @@ func (m Gunzip) Start() {
 	m.wg.Add(1)
 
 	go startGunzipIn(m.in, m.writer)
-	go startGunzipOut(m.out, m.reader, m.line, m.wg)
+	go startGunzipOut(m.out, m.reader, m.wg)
 }
 
 func (m Gunzip) Wait() {
@@ -75,7 +70,7 @@ func startGunzipIn(in chan *Message, writer io.WriteCloser) {
 	writer.Close()
 }
 
-func startGunzipOut(out chan *Message, reader io.Reader, line bool, wg *sync.WaitGroup) {
+func startGunzipOut(out chan *Message, reader io.Reader, wg *sync.WaitGroup) {
 	defer wg.Done()
 	defer close(out)
 
@@ -85,22 +80,11 @@ func startGunzipOut(out chan *Message, reader io.Reader, line bool, wg *sync.Wai
 		return
 	}
 
-	cb := func(payload []byte) {
-		SendMessage(payload, out)
-	}
-
-	if line {
-		err = ReadDelimStep(gzipReader, '\n', cb)
-	} else {
-		err = ReadBytesStep(gzipReader, cb)
-	}
-
+	err = ReadBytesSendMessages(gzipReader, out)
 	if err != nil {
 		log.Println(errors.Wrap(err, "Error reading gzip reader in gunzip"))
 		return
 	}
 }
 
-func (m *Gunzip) SetFlagSet(fs *pflag.FlagSet) {
-	fs.BoolVar(&m.line, "line", false, "Read lines from the de-compressed data")
-}
+func (m *Gunzip) SetFlagSet(fs *pflag.FlagSet) {}

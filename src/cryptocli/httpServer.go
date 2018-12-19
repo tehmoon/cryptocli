@@ -16,7 +16,6 @@ func init() {
 
 type HTTPServerHandleOptions struct {
 	Sync *sync.WaitGroup
-	Line bool
 	Mutex *sync.Mutex
 	Init bool
 }
@@ -28,14 +27,12 @@ type HTTPServer struct {
 	req *http.Request
 	addr string
 	ln net.Listener
-	line bool
 	mutex *sync.Mutex
 	init bool
 }
 
 func (m *HTTPServer) SetFlagSet(fs *pflag.FlagSet) {
 	fs.StringVar(&m.addr, "addr", "", "Listen on an address")
-	fs.BoolVar(&m.line, "line", false, "Read lines from the connection")
 }
 
 func (m *HTTPServer) In(in chan *Message) (chan *Message) {
@@ -69,23 +66,12 @@ func httpServerHandleIn(in chan *Message, w http.ResponseWriter, wait, done *syn
 	}
 }
 
-func httpServerHandleOut(out chan *Message, body io.ReadCloser, line bool, wait *sync.WaitGroup) {
+func httpServerHandleOut(out chan *Message, body io.ReadCloser, wait *sync.WaitGroup) {
 	defer close(out)
 	defer wait.Done()
 	defer body.Close()
 
-	var err error
-
-	cb := func(payload []byte) {
-		SendMessage(payload, out)
-	}
-
-	if line {
-		err = ReadDelimStep(body, '\n', cb)
-	} else {
-		err = ReadBytesStep(body, cb)
-	}
-
+	err := ReadBytesSendMessages(body, out)
 	if err != nil {
 		log.Println(errors.Wrap(err, "Error reading tcp connection in http-server"))
 	}
@@ -111,7 +97,7 @@ func httpServerHandle(in, out chan *Message, options *HTTPServerHandleOptions) (
 			wait.Add(1)
 
 			go httpServerHandleIn(in, w, wait, done)
-			go httpServerHandleOut(out, r.Body, options.Line, wait)
+			go httpServerHandleOut(out, r.Body, wait)
 
 			done.Wait()
 
@@ -121,10 +107,6 @@ func httpServerHandle(in, out chan *Message, options *HTTPServerHandleOptions) (
 }
 
 func (m *HTTPServer) Init(global *GlobalFlags) (error) {
-	if global.Line {
-		m.line = true
-	}
-
 	addr, err := net.ResolveTCPAddr("tcp", m.addr)
 	if err != nil {
 		return errors.Wrap(err, "Unable to resolve tcp address")
@@ -143,7 +125,6 @@ func (m *HTTPServer) Init(global *GlobalFlags) (error) {
 func (m HTTPServer) Start() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", httpServerHandle(m.in, m.out, &HTTPServerHandleOptions{
-		Line: m.line,
 		Sync: m.sync,
 		Mutex: m.mutex,
 		Init: m.init,

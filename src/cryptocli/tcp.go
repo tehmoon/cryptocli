@@ -39,10 +39,6 @@ func (m *TCP) Out(out chan *Message) (chan *Message) {
 }
 
 func (m *TCP) Init(global *GlobalFlags) (error) {
-	if global.Line {
-		m.line = true
-	}
-
 	addr, err := net.ResolveTCPAddr("tcp", m.addr)
 	if err != nil {
 		return errors.Wrap(err, "Unable to resolve tcp address")
@@ -63,7 +59,7 @@ func (m TCP) Start() {
 
 	go func() {
 		go tcpStartIn(m.conn, m.in, m.sync)
-		go tcpStartOut(m.conn, m.out, m.line, m.sync)
+		go tcpStartOut(m.conn, m.out, m.sync)
 	}()
 }
 
@@ -86,19 +82,8 @@ func tcpStartIn(conn *net.TCPConn, in chan *Message, wg *sync.WaitGroup) {
 	wg.Done()
 }
 
-func tcpStartOut(conn *net.TCPConn, out chan *Message, line bool, wg *sync.WaitGroup) {
-	var err error
-
-	cb := func(payload []byte) {
-		SendMessage(payload, out)
-	}
-
-	if line {
-		err = ReadDelimStep(conn, '\n', cb)
-	} else {
-		err = ReadBytesStep(conn, cb)
-	}
-
+func tcpStartOut(conn *net.TCPConn, out chan *Message, wg *sync.WaitGroup) {
+	err := ReadBytesSendMessages(conn, out)
 	if err != nil {
 		log.Println(errors.Wrap(err, "Error reading tcp connection in tcp"))
 	}
