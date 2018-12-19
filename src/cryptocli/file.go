@@ -115,9 +115,7 @@ func fileReadStartIn(in chan *Message, wg *sync.WaitGroup) {
 }
 
 func fileReadStartOut(file *os.File, out chan *Message, wg *sync.WaitGroup) {
-	err := ReadBytesStep(file, func(payload []byte) {
-		SendMessage(payload, out)
-	})
+	err := ReadBytesSendMessages(file, out)
 	if err != nil {
 		log.Println(errors.Wrap(err, "Error reading from file"))
 	}
