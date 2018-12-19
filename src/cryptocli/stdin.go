@@ -33,10 +33,13 @@ func (m *Stdin) Init(global *GlobalFlags) (error) {
 }
 
 func (m Stdin) Start() {
-	m.sync.Add(2)
+	m.sync.Add(1)
 
-	go stdinStartOut(m.out, m.sync)
-	go stdinStartIn(m.in, m.sync)
+	// Cancel will tell stdin to stop reading and close the out channel
+	cancel := make(chan struct{}, 0)
+
+	go stdinStartOut(m.out, cancel)
+	go stdinStartIn(m.in, cancel, m.sync)
 }
 
 func (m Stdin) Wait() {
@@ -61,21 +64,53 @@ func NewStdin() (Module) {
 	}
 }
 
-func stdinStartOut(write chan *Message, wg *sync.WaitGroup) {
-	err := ReadBytesSendMessages(os.Stdin, write)
+func stdinStartOutRead(write chan *Message, closed *StdinCloseSync) {
+	err := ReadBytesStep(os.Stdin, func(payload []byte) (bool) {
+		if closed.Closed {
+			return false
+		}
+
+		SendMessage(payload, write)
+		return true
+	})
 	if err != nil {
 		log.Println(errors.Wrap(err, "Error copying stdin"))
 	}
 
+	closed.Lock()
+	closed.Closed = true
 	close(write)
-
-	wg.Done()
+	closed.Unlock()
 }
 
-func stdinStartIn(read chan *Message, wg *sync.WaitGroup) {
+type StdinCloseSync struct {
+	sync.Mutex
+	Closed bool
+}
+
+func stdinStartOut(write chan *Message, cancel chan struct{}) {
+	// Closed makes sure it is safe to close the channel.
+	// Otherwise it panics.
+	closed := &StdinCloseSync{
+		Closed: false,
+	}
+
+	go stdinStartOutRead(write, closed)
+
+	<- cancel
+
+	closed.Lock()
+	if ! closed.Closed {
+		closed.Closed = true
+		close(write)
+	}
+	closed.Unlock()
+}
+
+func stdinStartIn(read chan *Message, cancel chan struct{}, wg *sync.WaitGroup) {
 	for range read {}
 
-	log.Println("Press c^d to close stdin")
+	cancel <- struct{}{}
 
 	wg.Done()
 }
