@@ -5,6 +5,7 @@ go build .
 rm cryptocli-*
 
 GOPATH=$(pwd)/.go
+GOPATH=${GOPATH} go get -v ./...
 GOPATH=${GOPATH} go get -u -v ./...
 
 compile() {
