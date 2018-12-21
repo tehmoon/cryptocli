@@ -62,20 +62,21 @@ It will stop and show the help until there are no help flags remaining.
 Usage of cryptocli [options] -- <module> [options] -- <module> [options] -- ...
       --std   Read from stdin and writes to stdout instead of setting both modules
 List of all modules:
+  stdin: Reads from stdin
   tcp: Connects to TCP
-  tcp-server: Listens TCP and wait for a single connection to complete
-  file: Reads from a file or write to a file.
   http: Connects to an HTTP webserver
+  http-server: Create an http web webserver
   stdout: Writes to stdout
   upper: Uppercase all ascii characters
   base64: Base64 decode or encode
-  http-server: Create an http web webserver
-  stdin: Reads from stdin
+  file: Reads from a file or write to a file.
   gunzip: Gunzip de-compress
   hex: Hex de-compress
-  s3: Downloads or uploads a file from s3
-  gzip: Gzip compress
   lower: Lowercase all ascii characters
+  dgst: Dgst decode or encode
+  gzip: Gzip compress
+  s3: Downloads or uploads a file from s3
+  tcp-server: Listens TCP and wait for a single connection to complete
 ```
 
 ## Design
@@ -145,7 +146,6 @@ List of modules:
   * fork
   * count bytes
   * pem
-  * dgst
   * http serve file
 
 Feature ideas:
