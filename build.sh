@@ -30,3 +30,12 @@ compile windows amd64
 compile windows 386
 compile openbsd amd64
 compile netbsd amd64
+
+cd src/cryptocli 2>/dev/null
+for a in $(ls cryptocli*.gz);
+do
+	printf '%s - ' "${a}"; ./cryptocli -- file --path "${a}" --read --  dgst --algo sha256 -- hex --encode -- stdout
+	echo
+done 2>/dev/null
+
+cd - 2>&1 > /dev/null
