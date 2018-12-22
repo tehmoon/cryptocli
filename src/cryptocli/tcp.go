@@ -17,12 +17,10 @@ type TCP struct {
 	out chan *Message
 	sync *sync.WaitGroup
 	addr string
-	line bool
 	conn *net.TCPConn
 }
 
 func (m *TCP) SetFlagSet(fs *pflag.FlagSet) {
-	fs.BoolVar(&m.line, "line", false, "Read lines from the socket")
 	fs.StringVar(&m.addr, "addr", "", "Tcp address to connect to")
 }
 
