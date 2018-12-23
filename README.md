@@ -64,32 +64,30 @@ It will stop and show the help until there are no help flags remaining.
 Usage of ./src/cryptocli/cryptocli: [options] -- <module> [options] -- <module> [options] -- ...
       --std   Read from stdin and writes to stdout instead of setting both modules
 List of all modules:
-  dgst: Dgst decode or encode
-  http: Connects to an HTTP webserver
-  lower: Lowercase all ascii characters
-  base64: Base64 decode or encode
   gunzip: Gunzip de-compress
   gzip: Gzip compress
   hex: Hex de-compress
-  s3: Downloads or uploads a file from s3
-  tcp-server: Listens TCP and wait for a single connection to complete
+  fork: Start a program and attach stdin and stdout to the pipeline
   http-server: Create an http web webserver
-  stdout: Writes to stdout
-  upper: Uppercase all ascii characters
-  file: Reads from a file or write to a file.
-  stdin: Reads from stdin
+  s3: Downloads or uploads a file from s3
   tcp: Connects to TCP
+  upper: Uppercase all ascii characters
+  base64: Base64 decode or encode
+  dgst: Dgst decode or encode
+  file: Reads from a file or write to a file.
+  stdout: Writes to stdout
+  http: Connects to an HTTP webserver
+  lower: Lowercase all ascii characters
+  stdin: Reads from stdin
+  tcp-server: Listens TCP and wait for a single connection to complete
 ```
 
 ### Modules
 
 ```
-Usage of module "file":
-      --append        Append data instead of truncating when writting
-      --mode uint32   Set file's mode if created when writting (default 416)
-      --path string   File's path
-      --read          Read from a file
-      --write         Write to a file
+Usage of module "base64":
+      --decode   Base64 decode
+      --encode   Base64 encode
 ```
 ```
 Usage of module "http-server":
@@ -103,12 +101,25 @@ Usage of module "s3":
       --write           Write to s3
 ```
 ```
-Usage of module "base64":
-      --decode   Base64 decode
-      --encode   Base64 encode
+Usage of module "upper":
 ```
 ```
-Usage of module "gzip":
+Usage of module "fork":
+```
+```
+Usage of module "lower":
+```
+```
+Usage of module "stdin":
+```
+```
+Usage of module "tcp-server":
+      --listen string   Listen on addr:port. If port is 0, random port will be assigned
+```
+```
+Usage of module "hex":
+      --decode   Hexadecimal decode
+      --encode   Hexadecimal encode
 ```
 ```
 Usage of module "http":
@@ -118,37 +129,29 @@ Usage of module "http":
       --url string      HTTP url to query
 ```
 ```
-Usage of module "tcp-server":
-      --listen string   Listen on addr:port. If port is 0, random port will be assigned
+Usage of module "stdout":
 ```
 ```
-Usage of module "upper":
+Usage of module "tcp":
+      --addr string   Tcp address to connect to
 ```
 ```
 Usage of module "dgst":
       --algo string   Hash algorithm to use: md5, sha1, sha256, sha512, sha3_224, sha3_256, sha3_384, sha3_512, blake2s_256, blake2b_256, blake2b_384, blake2b_512, ripemd160
 ```
 ```
-Usage of module "stdin":
-```
-```
-Usage of module "tcp":
-      --addr string   Tcp address to connect to
-      --line          Read lines from the socket
+Usage of module "file":
+      --append        Append data instead of truncating when writting
+      --mode uint32   Set file's mode if created when writting (default 416)
+      --path string   File's path
+      --read          Read from a file
+      --write         Write to a file
 ```
 ```
 Usage of module "gunzip":
 ```
 ```
-Usage of module "hex":
-      --decode   Hexadecimal decode
-      --encode   Hexadecimal encode
-```
-```
-Usage of module "lower":
-```
-```
-Usage of module "stdout":
+Usage of module "gzip":
 ```
 
 ## Design
@@ -215,7 +218,6 @@ List of modules:
 
   * aes
   * tee
-  * fork
   * count bytes
   * pem
   * http serve file
