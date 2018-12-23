@@ -131,3 +131,20 @@ func ParseRootRemainingArgs(modules *Modules, remaining int, root *pflag.FlagSet
 
 	return nil
 }
+
+func SanetizeFlags(fs *pflag.FlagSet) ([]string) {
+	args := fs.Args()
+
+	if len(args) == 0 {
+		return args
+	}
+
+	for i := 0; i < len(args); i++ {
+		if args[i] == "--" {
+			args = args[:i]
+			break
+		}
+	}
+
+	return args
+}
