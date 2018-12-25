@@ -84,23 +84,22 @@ func (m *File) Init(global *GlobalFlags) (error) {
 }
 
 func (m File) Start() {
-	m.sync.Add(2)
+	if m.read {
+		m.sync.Add(2)
+		go fileReadStartIn(m.in, m.sync)
+		go fileReadStartOut(m.file, m.out, m.sync)
 
-	go func() {
-		if m.read {
-			go fileReadStartIn(m.in, m.sync)
-			go fileReadStartOut(m.file, m.out, m.sync)
+		return
+	}
 
-			return
-		}
+	if m.write {
+		m.sync.Add(1)
+		go fileWriteStart(m.file, m.in, m.out, m.sync)
 
-		if m.write {
-			go fileWriteStartIn(m.file, m.in, m.sync)
-			go fileWriteStartOut(m.out, m.sync)
+		return
+	}
 
-			return
-		}
-	}()
+	log.Fatal(errors.New("Code path should not be reachable"))
 }
 
 func (m File) Wait() {
@@ -150,7 +149,7 @@ func FileOpenWrite(p string, append bool, mode os.FileMode) (*os.File, error) {
 	return file, nil
 }
 
-func fileWriteStartIn(file *os.File, in chan *Message, wg *sync.WaitGroup) {
+func fileWriteStart(file *os.File, in, out chan *Message, wg *sync.WaitGroup) {
 	for message := range in {
 		_, err := file.Write(message.Payload)
 		if err != nil {
@@ -160,10 +159,6 @@ func fileWriteStartIn(file *os.File, in chan *Message, wg *sync.WaitGroup) {
 	}
 
 	file.Close()
-	wg.Done()
-}
-
-func fileWriteStartOut(out chan *Message, wg *sync.WaitGroup) {
 	close(out)
 	wg.Done()
 }
