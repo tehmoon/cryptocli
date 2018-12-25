@@ -66,9 +66,11 @@ func NewStdin() (Module) {
 
 func stdinStartOutRead(write chan *Message, closed *StdinCloseSync) {
 	err := ReadBytesStep(os.Stdin, func(payload []byte) (bool) {
+		closed.RLock()
 		if closed.Closed {
 			return false
 		}
+		closed.RUnlock()
 
 		SendMessage(payload, write)
 		return true
@@ -78,13 +80,15 @@ func stdinStartOutRead(write chan *Message, closed *StdinCloseSync) {
 	}
 
 	closed.Lock()
-	closed.Closed = true
-	close(write)
+	if ! closed.Closed {
+		closed.Closed = true
+		close(write)
+	}
 	closed.Unlock()
 }
 
 type StdinCloseSync struct {
-	sync.Mutex
+	sync.RWMutex
 	Closed bool
 }
 
