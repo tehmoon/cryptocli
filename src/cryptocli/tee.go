@@ -3,7 +3,6 @@ package main
 import (
 	"github.com/tehmoon/errors"
 	"github.com/spf13/pflag"
-	"github.com/google/shlex"
 	"sync"
 )
 
@@ -43,26 +42,9 @@ func (m *Tee) Init(global *GlobalFlags) (error) {
 	m.teeIn = m.pipeline.In(m.teeIn)
 	m.teeOut = m.pipeline.Out(m.teeOut)
 
-	words, err := shlex.Split(m.pipe)
+	err := m.pipeline.Parse(m.pipe)
 	if err != nil {
-		return errors.Wrap(err, "Error parsing pipe argument in tee module")
-	}
-	words = append([]string{"--",}, words...)
-
-	mods := NewModules()
-	root := pflag.NewFlagSet("tee", pflag.ContinueOnError)
-	root.Parse(words)
-
-	err = ParseRootRemainingArgs(mods, 0, root)
-	if err != nil {
-		return errors.Wrap(err, "Error parsing pipeline in tee module")
-	}
-
-	modules := mods.Modules()
-	for i := range modules {
-		module := modules[i]
-
-		m.pipeline.Add(module)
+		return errors.Wrap(err, "Error parsing \"--pipe\" flag in tee module")
 	}
 
 	err = m.pipeline.Init(&GlobalFlags{})

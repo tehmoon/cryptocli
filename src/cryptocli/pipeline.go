@@ -2,6 +2,8 @@ package main
 
 import (
 	"github.com/tehmoon/errors"
+	"github.com/google/shlex"
+	"github.com/spf13/pflag"
 )
 
 type Pipeline struct {
@@ -29,6 +31,32 @@ func (p *Pipeline) Add(m Module) {
 		Out: out,
 		Module: m,
 	})
+}
+
+func (p *Pipeline) Parse(cl string) (error) {
+	words, err := shlex.Split(cl)
+	if err != nil {
+		return errors.Wrap(err, "Error parsing pipeline command line")
+	}
+	words = append([]string{"--",}, words...)
+
+	mods := NewModules()
+	root := pflag.NewFlagSet("root", pflag.ContinueOnError)
+	root.Parse(words)
+
+	err = ParseRootRemainingArgs(mods, 0, root)
+	if err != nil {
+		return errors.Wrap(err, "Error parsing pipeline modules")
+	}
+
+	modules := mods.Modules()
+	for i := range modules {
+		module := modules[i]
+
+		p.Add(module)
+	}
+
+	return nil
 }
 
 func (p *Pipeline) In(in chan *Message) (chan *Message) {
