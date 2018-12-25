@@ -20,7 +20,11 @@ compile() {
 
 	GOPATH=${GOPATH} GOOS=${GOOS} GOARCH=${GOARCH} go build -o "${NAME}" -tags netgo -ldflags "-w -extldflags \"-static\""
 	echo "Done compiling for ${GOOS} ${GOARCH}"
-	./cryptocli -- file --path "${NAME}" --read -- gzip -- file --path "${NAME}.gz" --write
+	./cryptocli -- \
+		file --path "${NAME}" --read -- \
+		gzip -- \
+		tee --pipe "dgst --algo sha256 -- hex --encode -- file --path \"${NAME}.gz.sha256\" --write" -- \
+		file --path "${NAME}.gz" --write
 }
 
 compile darwin amd64
@@ -32,9 +36,9 @@ compile openbsd amd64
 compile netbsd amd64
 
 cd src/cryptocli 2>/dev/null
-for a in $(ls cryptocli*.gz);
+for a in $(ls cryptocli*.gz.sha256);
 do
-	printf '%s - ' "${a}"; ./cryptocli -- file --path "${a}" --read --  dgst --algo sha256 -- hex --encode -- stdout
+	printf '%s - ' "${a}"; cat "${a}"
 	echo
 done 2>/dev/null
 
