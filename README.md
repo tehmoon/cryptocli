@@ -73,41 +73,31 @@ It will stop and show the help until there are no help flags remaining.
 Usage of ./src/cryptocli/cryptocli: [options] -- <module> [options] -- <module> [options] -- ...
       --std   Read from stdin and writes to stdout instead of setting both modules
 List of all modules:
-  dgst: Dgst decode or encode
-  lower: Lowercase all ascii characters
-  base64: Base64 decode or encode
-  gunzip: Gunzip de-compress
-  gzip: Gzip compress
-  s3: Downloads or uploads a file from s3
-  stdin: Reads from stdin
-  tcp: Connects to TCP
+  stdout: Writes to stdout
+  hex: Hex de-compress
+  fork: Start a program and attach stdin and stdout to the pipeline
+  null: Discard all incoming data
+  tee: Create a new one way pipeline to copy the data over
   file: Reads from a file or write to a file.
+  env: Read an environment variable
+  gzip: Gzip compress
+  lower: Lowercase all ascii characters
+  s3: Downloads or uploads a file from s3
+  upper: Uppercase all ascii characters
+  dgst: Dgst decode or encode
+  gunzip: Gunzip de-compress
   http: Connects to an HTTP webserver
   http-server: Create an http web webserver
-  upper: Uppercase all ascii characters
-  fork: Start a program and attach stdin and stdout to the pipeline
-  hex: Hex de-compress
-  null: Discard all incoming data
-  stdout: Writes to stdout
+  stdin: Reads from stdin
+  tcp: Connects to TCP
   tcp-server: Listens TCP and wait for a single connection to complete
-  tee: Create a new one way pipeline to copy the data over
+  base64: Base64 decode or encode
 ```
 
 ### Modules
 
 ```
-Usage of module "lower":
-```
-```
-Usage of module "upper":
-```
-```
-Usage of module "file":
-      --append        Append data instead of truncating when writting
-      --mode uint32   Set file's mode if created when writting (default 416)
-      --path string   File's path
-      --read          Read from a file
-      --write         Write to a file
+Usage of module "fork":
 ```
 ```
 Usage of module "hex":
@@ -122,22 +112,52 @@ Usage of module "http":
       --url string      HTTP url to query
 ```
 ```
-Usage of module "tcp":
-      --addr string   Tcp address to connect to
+Usage of module "stdout":
 ```
 ```
-Usage of module "gzip":
+Usage of module "tcp-server":
+      --listen string   Listen on addr:port. If port is 0, random port will be assigned
+```
+```
+Usage of module "upper":
 ```
 ```
 Usage of module "dgst":
       --algo string   Hash algorithm to use: md5, sha1, sha256, sha512, sha3_224, sha3_256, sha3_384, sha3_512, blake2s_256, blake2b_256, blake2b_384, blake2b_512, ripemd160
 ```
 ```
-Usage of module "fork":
+Usage of module "env":
+      --var string   Variable to read from
+```
+```
+Usage of module "gunzip":
+```
+```
+Usage of module "lower":
+```
+```
+Usage of module "tee":
+      --pipe string   Pipeline definition
+```
+```
+Usage of module "base64":
+      --decode   Base64 decode
+      --encode   Base64 encode
 ```
 ```
 Usage of module "http-server":
       --addr string   Listen on an address
+```
+```
+Usage of module "null":
+```
+```
+Usage of module "file":
+      --append        Append data instead of truncating when writting
+      --mode uint32   Set file's mode if created when writting (default 416)
+      --path string   File's path
+      --read          Read from a file
+      --write         Write to a file
 ```
 ```
 Usage of module "s3":
@@ -150,26 +170,11 @@ Usage of module "s3":
 Usage of module "stdin":
 ```
 ```
-Usage of module "tee":
-      --pipe string   Pipeline definition
+Usage of module "tcp":
+      --addr string   Tcp address to connect to
 ```
 ```
-Usage of module "base64":
-      --decode   Base64 decode
-      --encode   Base64 encode
-```
-```
-Usage of module "null":
-```
-```
-Usage of module "stdout":
-```
-```
-Usage of module "tcp-server":
-      --listen string   Listen on addr:port. If port is 0, random port will be assigned
-```
-```
-Usage of module "gunzip":
+Usage of module "gzip":
 ```
 
 ## Design
