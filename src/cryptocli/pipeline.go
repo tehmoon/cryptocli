@@ -4,6 +4,7 @@ import (
 	"github.com/tehmoon/errors"
 	"github.com/google/shlex"
 	"github.com/spf13/pflag"
+	"bytes"
 )
 
 type Pipeline struct {
@@ -119,6 +120,28 @@ func (p Pipeline) Wait() {
 
 		module.Module.Wait()
 	}
+}
+
+func ReadAllPipeline(pipe string) ([]byte, error) {
+	in, out, pipeline, err := InitPipeline(pipe, &GlobalFlags{})
+	if err != nil {
+		return nil, errors.Wrap(err, "Error starting pipeline")
+	}
+
+	buff := bytes.NewBuffer(nil)
+
+	go func() {
+		for message := range out {
+			buff.Write(message.Payload)
+		}
+
+		close(in)
+	}()
+
+	pipeline.Start()
+	pipeline.Wait()
+
+	return buff.Bytes(), nil
 }
 
 // Create a pipeline and initialize it.
