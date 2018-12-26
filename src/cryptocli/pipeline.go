@@ -85,11 +85,11 @@ func (p Pipeline) Init(global *GlobalFlags) (error) {
 		}
 
 		if i == 0 {
-			go RelayMessages(p.out, in)
+			go RelayMessages(p.in, in)
 		}
 
 		if i == len(p.modules) - 1 {
-			go RelayMessages(out, p.in)
+			go RelayMessages(out, p.out)
 			continue
 		}
 

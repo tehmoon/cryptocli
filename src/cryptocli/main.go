@@ -46,6 +46,6 @@ func main() {
 	}
 
 	pipeline.Start()
-	RelayMessages(in, out)
+	RelayMessages(out, in)
 	pipeline.Wait()
 }

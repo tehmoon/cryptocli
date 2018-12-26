@@ -65,16 +65,16 @@ func (m Tee) Start() {
 			copy(payload, message.Payload)
 
 			SendMessage(message.Payload, m.out)
-			SendMessage(payload, m.teeOut)
+			SendMessage(payload, m.teeIn)
 		}
 
 		close(m.out)
-		close(m.teeOut)
+		close(m.teeIn)
 		m.sync.Done()
 	}()
 
 	go func() {
-		for range m.teeIn {}
+		for range m.teeOut {}
 		m.sync.Done()
 	}()
 }
