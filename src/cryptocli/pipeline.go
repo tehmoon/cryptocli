@@ -114,3 +114,25 @@ func (p Pipeline) Wait() {
 		module.Module.Wait()
 	}
 }
+
+// Create a pipeline and initialize it.
+// Returns both sides of the pipeline and the pipeline itself.
+// You will also have to call Start() and Wait()
+func InitPipeline(pipe string, global *GlobalFlags) (in, out chan *Message, pipeline *Pipeline, err error) {
+	pipeline = NewPipeline()
+	in, out = NewPipeMessages()
+	in = pipeline.In(in)
+	out = pipeline.Out(out)
+
+	err = pipeline.Parse(pipe)
+	if err != nil {
+		return nil, nil, nil, errors.Wrap(err, "Error parsing pipeline")
+	}
+
+	err = pipeline.Init(global)
+	if err != nil {
+		return nil, nil, nil, errors.Wrap(err, "Error initializing pipeline")
+	}
+
+	return in, out, pipeline, nil
+}

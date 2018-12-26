@@ -36,20 +36,10 @@ func (m *Tee) Out(out chan *Message) (chan *Message) {
 	return out
 }
 
-func (m *Tee) Init(global *GlobalFlags) (error) {
-	m.pipeline = NewPipeline()
-	m.teeIn, m.teeOut = NewPipeMessages()
-	m.teeIn = m.pipeline.In(m.teeIn)
-	m.teeOut = m.pipeline.Out(m.teeOut)
-
-	err := m.pipeline.Parse(m.pipe)
+func (m *Tee) Init(global *GlobalFlags) (err error) {
+	m.teeIn, m.teeOut, m.pipeline, err = InitPipeline(m.pipe, &GlobalFlags{})
 	if err != nil {
-		return errors.Wrap(err, "Error parsing \"--pipe\" flag in tee module")
-	}
-
-	err = m.pipeline.Init(&GlobalFlags{})
-	if err != nil {
-		return errors.Wrap(err, "Error initializing pipeline in tee module")
+		return errors.Wrap(err, "Error creating pipeline in tee module")
 	}
 
 	return nil
