@@ -37,6 +37,10 @@ func (m *Tee) Out(out chan *Message) (chan *Message) {
 }
 
 func (m *Tee) Init(global *GlobalFlags) (err error) {
+	if m.pipe == "" {
+		return errors.Wrapf(err, "Flag %q must be specified in tee module", "tee")
+	}
+
 	m.teeIn, m.teeOut, m.pipeline, err = InitPipeline(m.pipe, &GlobalFlags{})
 	if err != nil {
 		return errors.Wrap(err, "Error creating pipeline in tee module")
