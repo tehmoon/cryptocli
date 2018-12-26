@@ -72,6 +72,12 @@ func (p *Pipeline) Out(out chan *Message) (chan *Message) {
 }
 
 func (p Pipeline) Init(global *GlobalFlags) (error) {
+	if len(p.modules) == 0 {
+		go RelayMessages(p.in, p.out)
+
+		return nil
+	}
+
 	for i := range p.modules {
 		module := p.modules[i]
 
