@@ -62,3 +62,59 @@ func ReadBytesStep(r io.Reader, cb func([]byte) (bool)) (error) {
 
 	return err
 }
+
+type MessageReader struct {
+	reader *io.PipeReader
+	writer *io.PipeWriter
+	sync chan struct{}
+	err error
+}
+
+// Wrap chan *Message into a io.Pipe to make a io.ReadCloser()
+func NewMessageReader(c chan *Message) (*MessageReader) {
+	mr := &MessageReader{
+		sync: make(chan struct{}, 0),
+	}
+
+	mr.reader, mr.writer = io.Pipe()
+
+	go func() {
+		opened := false
+
+		LOOP: for {
+			select {
+				case message, ok := <- c:
+					if ! ok {
+						opened = true
+						break LOOP
+					}
+
+					_, mr.err = mr.writer.Write(message.Payload)
+					if mr.err != nil {
+						opened = true
+						break LOOP
+					}
+				case <- mr.sync:
+					break LOOP
+			}
+		}
+
+		if opened {
+			mr.writer.CloseWithError(mr.err)
+			<- mr.sync
+		}
+	}()
+
+	return mr
+}
+
+func (mr MessageReader) Read(p []byte) (int, error) {
+	return mr.reader.Read(p)
+}
+
+func (mr MessageReader) Close() (error) {
+	mr.writer.CloseWithError(mr.err)
+	mr.sync <- struct{}{}
+
+	return mr.err
+}

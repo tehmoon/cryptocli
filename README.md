@@ -57,6 +57,15 @@ cryptocli -- \
   file --path /tmp/blih --write
 ```
 
+### stdin -> aes-gcm encrypt -> tcp-server -> aes-gcm decryt -> stdout: setup a tcp-server with aes-gcm encryption
+
+```
+pwd=DEADBEEF ./cryptocli --std  -- \
+  aes-gcm --encrypt --password-in "env --var pwd" -- \
+  tcp-server --listen :8080 -- \
+  aes-gcm --decrypt --password-in "env --var pwd"
+```
+
 ## Usage
 
 By setting the help flags to each module:
@@ -73,25 +82,26 @@ It will stop and show the help until there are no help flags remaining.
 Usage of ./src/cryptocli/cryptocli: [options] -- <module> [options] -- <module> [options] -- ...
       --std   Read from stdin and writes to stdout instead of setting both modules
 List of all modules:
-  stdout: Writes to stdout
   hex: Hex de-compress
-  fork: Start a program and attach stdin and stdout to the pipeline
-  null: Discard all incoming data
-  tee: Create a new one way pipeline to copy the data over
-  file: Reads from a file or write to a file.
-  env: Read an environment variable
-  gzip: Gzip compress
   lower: Lowercase all ascii characters
-  s3: Downloads or uploads a file from s3
+  null: Discard all incoming data
   upper: Uppercase all ascii characters
   dgst: Dgst decode or encode
   gunzip: Gunzip de-compress
-  http: Connects to an HTTP webserver
-  http-server: Create an http web webserver
-  stdin: Reads from stdin
-  tcp: Connects to TCP
   tcp-server: Listens TCP and wait for a single connection to complete
+  tee: Create a new one way pipeline to copy the data over
+  stdout: Writes to stdout
+  gzip: Gzip compress
+  http: Connects to an HTTP webserver
+  s3: Downloads or uploads a file from s3
+  stdin: Reads from stdin
+  fork: Start a program and attach stdin and stdout to the pipeline
+  http-server: Create an http web webserver
+  tcp: Connects to TCP
+  aes-gcm: AES-GCM encryption/decryption
   base64: Base64 decode or encode
+  env: Read an environment variable
+  file: Reads from a file or write to a file.
 ```
 
 ### Modules
@@ -100,56 +110,17 @@ List of all modules:
 Usage of module "fork":
 ```
 ```
-Usage of module "hex":
-      --decode   Hexadecimal decode
-      --encode   Hexadecimal encode
-```
-```
-Usage of module "http":
-      --data            Send data from the pipeline to the server
-      --insecure        Don't valid the TLS certificate chain
-      --method string   Set the method to query (default "GET")
-      --url string      HTTP url to query
-```
-```
-Usage of module "stdout":
-```
-```
-Usage of module "tcp-server":
-      --listen string   Listen on addr:port. If port is 0, random port will be assigned
-```
-```
-Usage of module "upper":
-```
-```
-Usage of module "dgst":
-      --algo string   Hash algorithm to use: md5, sha1, sha256, sha512, sha3_224, sha3_256, sha3_384, sha3_512, blake2s_256, blake2b_256, blake2b_384, blake2b_512, ripemd160
-```
-```
-Usage of module "env":
-      --var string   Variable to read from
-```
-```
-Usage of module "gunzip":
-```
-```
 Usage of module "lower":
 ```
 ```
-Usage of module "tee":
-      --pipe string   Pipeline definition
-```
-```
-Usage of module "base64":
-      --decode   Base64 decode
-      --encode   Base64 encode
-```
-```
-Usage of module "http-server":
-      --addr string   Listen on an address
-```
-```
 Usage of module "null":
+```
+```
+Usage of module "s3":
+      --bucket string   Specify the bucket name
+      --path string     Object path
+      --read            Read from s3
+      --write           Write to s3
 ```
 ```
 Usage of module "file":
@@ -160,21 +131,68 @@ Usage of module "file":
       --write         Write to a file
 ```
 ```
-Usage of module "s3":
-      --bucket string   Specify the bucket name
-      --path string     Object path
-      --read            Read from s3
-      --write           Write to s3
+Usage of module "tcp":
+      --addr string   Tcp address to connect to
+```
+```
+Usage of module "gunzip":
+```
+```
+Usage of module "hex":
+      --decode   Hexadecimal decode
+      --encode   Hexadecimal encode
+```
+```
+Usage of module "tcp-server":
+      --listen string   Listen on addr:port. If port is 0, random port will be assigned
+```
+```
+Usage of module "env":
+      --var string   Variable to read from
+```
+```
+Usage of module "base64":
+      --decode   Base64 decode
+      --encode   Base64 encode
+```
+```
+Usage of module "dgst":
+      --algo string   Hash algorithm to use: md5, sha1, sha256, sha512, sha3_224, sha3_256, sha3_384, sha3_512, blake2s_256, blake2b_256, blake2b_384, blake2b_512, ripemd160
+```
+```
+Usage of module "gzip":
+```
+```
+Usage of module "http":
+      --data            Send data from the pipeline to the server
+      --insecure        Don't valid the TLS certificate chain
+      --method string   Set the method to query (default "GET")
+      --url string      HTTP url to query
+```
+```
+Usage of module "http-server":
+      --addr string   Listen on an address
 ```
 ```
 Usage of module "stdin":
 ```
 ```
-Usage of module "tcp":
-      --addr string   Tcp address to connect to
+Usage of module "stdout":
 ```
 ```
-Usage of module "gzip":
+Usage of module "aes-gcm":
+      --128                  128 bits key (default true)
+      --256                  256 bits key
+      --decrypt              Decrypt
+      --encrypt              Encrypt
+      --password-in string   Pipeline definition to set the password
+```
+```
+Usage of module "upper":
+```
+```
+Usage of module "tee":
+      --pipe string   Pipeline definition
 ```
 
 ## Design
