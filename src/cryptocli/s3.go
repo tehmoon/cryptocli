@@ -66,7 +66,7 @@ func (m *S3) Init(global *GlobalFlags) (error) {
 }
 
 func (m S3) Start() {
-	m.sync.Add(2)
+	m.sync.Add(1)
 
 	options := &S3Options{
 		Bucket: m.bucket,
@@ -76,6 +76,7 @@ func (m S3) Start() {
 
 	go func() {
 		if m.read {
+			m.sync.Add(1)
 			go s3ReadStartIn(m.in, m.sync)
 			go s3ReadStartOut(m.out, options, m.sync)
 
@@ -83,8 +84,7 @@ func (m S3) Start() {
 		}
 
 		if m.write {
-			go s3WriteStartIn(m.in, options, m.sync)
-			go s3WriteStartOut(m.out, m.sync)
+			go s3WriteStartIn(m.in, m.out, options, m.sync)
 
 			return
 		}
@@ -124,7 +124,7 @@ func s3ReadStartOut(out chan *Message, options *S3Options, wg *sync.WaitGroup) {
 	wg.Done()
 }
 
-func s3WriteStartIn(in chan *Message, options *S3Options, wg *sync.WaitGroup) {
+func s3WriteStartIn(in, out chan *Message, options *S3Options, wg *sync.WaitGroup) {
 	uploader := s3manager.NewUploader(options.Session)
 
 	reader, writer := io.Pipe()
@@ -152,11 +152,8 @@ func s3WriteStartIn(in chan *Message, options *S3Options, wg *sync.WaitGroup) {
 		reader.Close()
 	}
 
-	wg.Done()
-}
-
-func s3WriteStartOut(out chan *Message, wg *sync.WaitGroup) {
 	close(out)
+
 	wg.Done()
 }
 
