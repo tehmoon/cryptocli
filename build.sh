@@ -18,7 +18,7 @@ compile() {
 		NAME="${NAME}.exe"
 	fi
 
-	GOPATH=${GOPATH} GOOS=${GOOS} GOARCH=${GOARCH} go build -o "${NAME}" -tags netgo -ldflags "-w -extldflags \"-static\""
+	GOPATH=${GOPATH} GOOS=${GOOS} GOARCH=${GOARCH} go build -o "${NAME}" -tags netgo -ldflags "-extldflags \"-static\" -s -w"
 	echo "Done compiling for ${GOOS} ${GOARCH}"
 	./cryptocli -- \
 		file --path "${NAME}" --read -- \
