@@ -5,7 +5,7 @@ type Message struct {
 }
 
 func SendMessage(payload []byte, out chan *Message) {
-	out <- &Message{Payload: payload,}
+	out <- &Message{Payload: payload}
 }
 
 func RelayMessages(read, write chan *Message) {

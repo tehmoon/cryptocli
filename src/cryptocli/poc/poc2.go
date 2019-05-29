@@ -56,35 +56,47 @@ func process(c chan *Message) {
 	target := DIRECT
 
 	go processFile(toread, lock, syn)
+	f, err := ioutil.TempFile("", "")
+	if err != nil {
+		panic(err)
+	}
 
 	for {
 		select {
 			case c := <- c:
-				now := time.Now()
-
 				switch target {
 					case DIRECT:
+						now := time.Now()
 						direct(c)
+						took := time.Since(now)
+						if took > time.Second {
+							target = FILE
+							log.Println("Too slow!")
+						}
+
+						log.Printf("Took %s\n", took)
 					case FILE:
 						lock.RLock()
-							*toread = *toread + int64(len(c.Payload))
-							log.Printf("Toread: %d\n", *toread)
-							if *toread == 0 {
-								target = FILE
-								direct(c)
-							}
-						lock.RUnlock()
+						log.Printf("Toread: %d\n", *toread)
+						if *toread == 0 && target == FILE {
 
-						syn <- c
+							log.Println("switchig to direct")
+							target = DIRECT
+							lock.Rlock()
+							direct(c)
+							continue
+						}
+
+						*toread = *toread + int64(len(c.Payload))
+						lock.Rlock()
+
+						i, err := f.Write(c.Payload)
+						if err != nil {
+							panic(err)
+						}
+
+					
 				}
-
-				took := time.Since(now)
-				if took > time.Second {
-					target = FILE
-					log.Println("Too slow!")
-				}
-
-				log.Printf("Took %s\n", took)
 		}
 	}
 }
