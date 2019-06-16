@@ -8,6 +8,10 @@ func SendMessage(payload []byte, out chan *Message) {
 	out <- &Message{Payload: payload,}
 }
 
+func SendMessageLine(payload []byte, out chan *Message) {
+	SendMessage(append(payload, '\n'), out)
+}
+
 func RelayMessages(read, write chan *Message) {
 	for message := range read {
 		write <- message
