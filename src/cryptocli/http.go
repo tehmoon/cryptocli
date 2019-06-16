@@ -126,14 +126,18 @@ func httpCreateTransport(options *HTTPOptions) (http.RoundTripper) {
 	if ok {
 		*tr = *transport
 
-		tr.TLSClientConfig = &tls.Config{
-			InsecureSkipVerify: options.Insecure,
-		}
+		tr.TLSClientConfig = httpCreateTLSConfig(options)
 
 		rt = tr
 	}
 
 	return rt
+}
+
+func httpCreateTLSConfig(options *HTTPOptions) (config *tls.Config) {
+	return &tls.Config{
+		InsecureSkipVerify: options.Insecure,
+	}
 }
 
 func httpStartOut(out chan *Message, req *http.Request, options *HTTPOptions, wait chan struct{}, wg *sync.WaitGroup) {
