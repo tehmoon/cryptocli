@@ -37,6 +37,7 @@ func (m Stdout) Start() {
 	go func() {
 		for message := range m.in {
 			os.Stdout.Write(message.Payload)
+			os.Stdout.Sync()
 		}
 
 		close(m.out)
