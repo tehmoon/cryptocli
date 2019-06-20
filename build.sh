@@ -1,30 +1,40 @@
 #!/bin/sh
-cd src/cryptocli
-go build .
+set -e
 
-rm cryptocli-*
+exec 6>&1
+exec 7>&2
+exec > build.log 2>&1
+
+trap "[ \$? -ne 0 ] && cat ../../build.log >&7; rm ../../build.log || true" EXIT
+
+set -x
+
+cd src/cryptocli
+
+rm -rf cryptocli-*
+rm build.log || true
 
 GOPATH=$(pwd)/.go
-GOPATH=${GOPATH} go get -v ./...
-GOPATH=${GOPATH} go get -u -v ./...
+GOPATH=${GOPATH} go get -v ./... || true
+GOPATH=${GOPATH} go get -u -v ./... || true
+
+GOPATH=${GOPATH} go build -o cryptocli-new .
 
 compile() {
-	GOOS=$1
-	GOARCH=$2
-	NAME="cryptocli-${GOOS}-${GOARCH}"
+	local GOOS=$1
+	local GOARCH=$2
+	local DEST="cryptocli-${GOOS}-${GOARCH}"
+	local BIN="cryptocli"
 
-	if [ "${GOOS}" = "windows" ]
-	then
-		NAME="${NAME}.exe"
-	fi
-
-	GOPATH=${GOPATH} GOOS=${GOOS} GOARCH=${GOARCH} go build -o "${NAME}" -tags netgo -ldflags "-extldflags \"-static\" -s -w"
+	GOPATH=${GOPATH} GOOS=${GOOS} GOARCH=${GOARCH} go build -tags netgo -ldflags "-extldflags \"-static\" -s -w"
 	echo "Done compiling for ${GOOS} ${GOARCH}"
-	./cryptocli -- \
-		file --path "${NAME}" --read -- \
-		gzip -- \
-		tee --pipe "dgst --algo sha256 -- hex --encode -- file --path \"${NAME}.gz.sha256\" --write" -- \
-		file --path "${NAME}.gz" --write
+
+	[ "${GOOS}" = "windows" ] && BIN="${BIN}.exe"
+
+	./cryptocli-new \
+		-- fork zip - "${BIN}" \
+		-- tee --pipe "-- dgst --algo sha256 -- hex --encode -- file --path \"${DEST}.zip.sha256\" --write" \
+		-- file --path "${DEST}.zip" --write
 }
 
 compile darwin amd64
@@ -35,11 +45,7 @@ compile windows 386
 compile openbsd amd64
 compile netbsd amd64
 
-cd src/cryptocli 2>/dev/null
-for a in $(ls cryptocli*.gz.sha256);
+for a in $(ls cryptocli*.zip.sha256);
 do
-	printf '%s - ' "${a}"; cat "${a}"
-	echo
-done 2>/dev/null
-
-cd - 2>&1 > /dev/null
+	{ printf '%s - ' "${a}"; cat "${a}"; echo; } >&6
+done
