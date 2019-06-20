@@ -67,12 +67,11 @@ type AESGCMFlags struct {
 }
 
 // Don't close out when you are done
-func aesGCMEncrypt(in, out chan *Message, aead cipher.AEAD) {
+func aesGCMEncrypt(in, out chan *Message, aead cipher.AEAD) (err error) {
 	nonceLength := 8
 	nonce, err := NewAESNonce(nonceLength, rand.Reader)
 	if err != nil {
-		log.Println(errors.Wrap(err, "Error generating nonce in aes module").Error())
-		return
+		return errors.Wrap(err, "Error generating nonce in aes module")
 	}
 
 	SendMessage(nonce.Nonce()[:nonceLength], out)
@@ -91,18 +90,19 @@ func aesGCMEncrypt(in, out chan *Message, aead cipher.AEAD) {
 
 		rotate, err := nonce.Increment()
 		if err != nil {
-			log.Println(errors.Wrap(err, "Error incrementing nonce in aes module").Error())
-			break
+			return errors.Wrap(err, "Error incrementing nonce in aes module")
 		}
 
 		if rotate {
 			SendMessage(nonce.Nonce()[:nonceLength], out)
 		}
 	}
+
+	return nil
 }
 
 // Don't close out when you are done
-func aesGCMDecrypt(in, out chan *Message, aead cipher.AEAD, reader io.ReadCloser) {
+func aesGCMDecrypt(in, out chan *Message, aead cipher.AEAD, reader io.ReadCloser) (err error) {
 	defer reader.Close()
 
 	nonceLength := 8
@@ -110,15 +110,13 @@ func aesGCMDecrypt(in, out chan *Message, aead cipher.AEAD, reader io.ReadCloser
 
 	nonce, err := NewAESNonce(nonceLength, reader)
 	if err != nil {
-		log.Println(errors.Wrap(err, "Error generating nonce in aes module").Error())
-		return
+		return errors.Wrap(err, "Error generating nonce in aes module")
 	}
 
 	for {
 		_, err = io.ReadFull(reader, l)
 		if err != nil {
-			log.Println(errors.Wrap(err, "Error reading length in aes module").Error())
-			break
+			return errors.Wrap(err, "Error reading length in aes module")
 		}
 
 		i := binary.LittleEndian.Uint32(l)
@@ -126,23 +124,23 @@ func aesGCMDecrypt(in, out chan *Message, aead cipher.AEAD, reader io.ReadCloser
 		payload := make([]byte, i + 16)
 		_, err = io.ReadFull(reader, payload)
 		if err != nil {
-			log.Println(errors.Wrap(err, "Error reading encrypted payload in aes module").Error())
-			break
+			return errors.Wrap(err, "Error reading encrypted payload in aes module")
 		}
 
 		plaintext, err := aead.Open(nil, nonce.Nonce(), payload, l)
 		if err != nil {
-			panic(err.Error())
+			return errors.Wrap(err, "Error decrypting the payload")
 		}
 
 		SendMessage(plaintext, out)
 
 		_, err = nonce.Increment()
 		if err != nil {
-			log.Println(errors.Wrap(err, "Error incrementing nonce in aes module").Error())
-			break
+			return errors.Wrap(err, "Error incrementing nonce in aes module")
 		}
 	}
+
+	return nil
 }
 
 func (m *AESGCM) Init(global *GlobalFlags) (err error) {
@@ -215,12 +213,18 @@ func (m AESGCM) Start() {
 		}
 
 		if m.flags.encrypt {
-			aesGCMEncrypt(m.in, m.out, aead)
+			err := aesGCMEncrypt(m.in, m.out, aead)
+			if err != nil {
+				log.Println(err.Error())
+			}
 			return
 		}
 
 		if m.flags.decrypt {
-			aesGCMDecrypt(m.in, m.out, aead, reader)
+			err := aesGCMDecrypt(m.in, m.out, aead, reader)
+			if err != nil {
+				log.Println(err.Error())
+			}
 			return
 		}
 

@@ -90,6 +90,14 @@ func (m TCPServer) Start() {
 
 		select {
 			case <- wait:
+			case <- time.NewTicker(m.connectTimeout).C:
+				log.Println("Connect timeout reached, nobody connected and no inputs were sent")
+
+				close(relayc)
+				close(m.out)
+				m.sync.Done()
+				m.sync.Done()
+				return
 			case message, closed := <- m.in:
 				log.Println("Message receive before connection got accepted")
 
