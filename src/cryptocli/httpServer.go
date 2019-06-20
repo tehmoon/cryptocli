@@ -162,6 +162,12 @@ func (m *HTTPServer) Start() {
 		select {
 			case <- waitc:
 				startRelay.Done()
+			case <- time.NewTicker(m.connectTimeout).C:
+				log.Println("Connect timeout reached, nobody connected and no inputs were sent")
+				options.Init = true
+				close(m.out)
+				m.sync.Done()
+				return
 			case message, closed := <- m.in:
 				select {
 					case <- time.NewTicker(m.connectTimeout).C:
