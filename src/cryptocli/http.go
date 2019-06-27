@@ -25,6 +25,7 @@ type HTTP struct {
 	writer io.WriteCloser
 	req *http.Request
 	insecure bool
+	cancel chan struct{}
 }
 
 func (m *HTTP) SetFlagSet(fs *pflag.FlagSet) {
@@ -74,11 +75,12 @@ func (m HTTP) Start() {
 		}
 
 		go httpStartIn(m.in, m.writer, wait, m.sync)
-		go httpStartOut(m.out, m.req, options, wait, m.sync)
+		go httpStartOut(m.out, m.req, options, wait, m.sync, m.cancel)
 	}()
 }
 
 func (m HTTP) Wait() {
+	m.cancel <- struct{}{}
 	m.sync.Wait()
 
 	for range m.in {}
@@ -99,12 +101,15 @@ func httpStartIn(in chan *Message, writer io.WriteCloser, wait chan struct{}, wg
 	started := false
 	for message := range in {
 		if ! started {
-			wait <- struct{}{}
 			close(wait)
 			started = true
 		}
 
 		writer.Write(message.Payload)
+	}
+
+	if ! started {
+		close(wait)
 	}
 
 	writer.Close()
@@ -140,8 +145,14 @@ func httpCreateTLSConfig(options *HTTPOptions) (config *tls.Config) {
 	}
 }
 
-func httpStartOut(out chan *Message, req *http.Request, options *HTTPOptions, wait chan struct{}, wg *sync.WaitGroup) {
+func httpStartOut(out chan *Message, req *http.Request, options *HTTPOptions, wait chan struct{}, wg *sync.WaitGroup, cancel chan struct{}) {
+	canceled := false
 	defer wg.Done()
+	defer func() {
+		if ! canceled {
+			<- cancel
+		}
+	}()
 	defer close(out)
 
 	client := &http.Client{
@@ -157,7 +168,17 @@ func httpStartOut(out chan *Message, req *http.Request, options *HTTPOptions, wa
 	}
 	defer resp.Body.Close()
 
-	err = ReadBytesSendMessages(resp.Body, out)
+	err = ReadBytesStep(resp.Body, func(payload []byte) (bool) {
+		select {
+			case <- cancel:
+				canceled = true
+				return false
+			default:
+				SendMessage(payload, out)
+		}
+
+		return true
+	})
 	if err != nil {
 		log.Println(errors.Wrap(err, "Error reading body of http response"))
 		return
@@ -167,5 +188,6 @@ func httpStartOut(out chan *Message, req *http.Request, options *HTTPOptions, wa
 func NewHTTP() (Module) {
 	return &HTTP{
 		sync: &sync.WaitGroup{},
+		cancel: make(chan struct{}),
 	}
 }
