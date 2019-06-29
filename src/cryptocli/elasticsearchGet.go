@@ -243,7 +243,7 @@ func ElasticsearchGetDoSearch(args *ElasticsearchGetFuncArgs, out chan *Message,
 		}
 	}
 
-	if res == nil {
+	if res == nil || res.Hits.TotalHits == 0 {
 		if args.Flags.CountOnly {
 			SendMessageLine([]byte("0"), out)
 		}
@@ -259,9 +259,7 @@ func ElasticsearchGetDoSearch(args *ElasticsearchGetFuncArgs, out chan *Message,
 	if args.Flags.CountOnly {
 		var totalHits int64 = 0
 
-		if res != nil {
-			totalHits = res.Hits.TotalHits
-		}
+		totalHits = res.Hits.TotalHits
 
 		SendMessageLine([]byte(strconv.FormatInt(totalHits, 10)), out)
 
