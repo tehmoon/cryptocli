@@ -8,7 +8,7 @@ import (
 	"time"
 	"github.com/spf13/pflag"
 	"sync"
-	"gopkg.in/olivere/elastic.v5"
+	elastic5 "gopkg.in/olivere/elastic.v5"
 	"io"
 )
 
@@ -21,7 +21,7 @@ type ElasticsearchPut struct {
 	out chan *Message
 	sync *sync.WaitGroup
 	fs *pflag.FlagSet
-	client *elastic.Client
+	client *elastic5.Client
 	stdin io.WriteCloser
 	stdout io.ReadCloser
 	flags *ElasticsearchPutFlags
@@ -32,6 +32,7 @@ type ElasticsearchPut struct {
 }
 
 type ElasticsearchPutFlags struct {
+	Version int
 	Server string
 	Index string
 	Type string
@@ -44,6 +45,8 @@ type ElasticsearchPutFlags struct {
 
 func (m *ElasticsearchPut) SetFlagSet(fs *pflag.FlagSet) {
 	m.flags = &ElasticsearchPutFlags{}
+
+	fs.IntVar(&m.flags.Version, "version", 5, "Set the elasticsearch library version")
 	fs.StringVar(&m.flags.Server, "server", "http://localhost:9200", "Specify elasticsearch server to query")
 	fs.StringVar(&m.flags.Index, "index", "", "Default index to write to. Uses \"_index\" if found in input")
 	fs.StringVar(&m.flags.Type, "type", "", "Default type to use. Uses \"_type\" if found in input")
@@ -67,6 +70,12 @@ func (m *ElasticsearchPut) Out(out chan *Message) (chan *Message) {
 }
 
 func (m *ElasticsearchPut) Init(global *GlobalFlags) (error) {
+	switch version := m.flags.Version; version {
+		case 5:
+		default:
+			return errors.Errorf("Version %d is not supported", version)
+	}
+
 	if m.flags.Raw && (m.flags.Index == "" || m.flags.Type == "") {
 		return errors.Errorf("Flag %q and %q cannot be empty when %q is set", "--index", "--type", "--raw")
 	}
@@ -83,10 +92,10 @@ func (m *ElasticsearchPut) Init(global *GlobalFlags) (error) {
 		return errors.Errorf("Duration for flag %q cannot be negative", "--flush-interval")
 	}
 
-	setURL := elastic.SetURL(m.flags.Server)
+	setURL := elastic5.SetURL(m.flags.Server)
 
 	var err error
-	m.client, err = elastic.NewClient(setURL, elastic.SetSniff(false))
+	m.client, err = elastic5.NewClient(setURL, elastic5.SetSniff(false))
 	if err != nil {
 		return errors.Wrapf(err, "Err creating connection to server %s", m.flags.Server)
 	}
@@ -210,7 +219,7 @@ func (m *ElasticsearchPut) Start() {
 				data.Index = m.flags.Index
 			}
 
-			processor.Add(elastic.NewBulkIndexRequest().
+			processor.Add(elastic5.NewBulkIndexRequest().
 				Index(data.Index).
 				Type(data.Type).
 				Id(data.Id).
@@ -219,7 +228,7 @@ func (m *ElasticsearchPut) Start() {
 	}()
 }
 
-func ElasticsearchPutFlushCloseFunc(processor *elastic.BulkProcessor, wg *sync.WaitGroup) {
+func ElasticsearchPutFlushCloseFunc(processor *elastic5.BulkProcessor, wg *sync.WaitGroup) {
 	defer wg.Done()
 
 	var e error
@@ -266,11 +275,11 @@ func NewElasticsearchPut() (Module) {
 func ElasticsearchPutAfterFunc(
 	sync *sync.WaitGroup,
 	out chan *Message,
-) (elastic.BulkAfterFunc) {
+) (elastic5.BulkAfterFunc) {
 	return func(
 		executionId int64,
-		requests []elastic.BulkableRequest,
-		response *elastic.BulkResponse,
+		requests []elastic5.BulkableRequest,
+		response *elastic5.BulkResponse,
 		err error,
 	) {
 

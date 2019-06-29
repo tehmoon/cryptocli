@@ -8,7 +8,7 @@ import (
 	"github.com/tehmoon/errors"
 	"github.com/spf13/pflag"
 	"sync"
-	"gopkg.in/olivere/elastic.v5"
+	elastic5 "gopkg.in/olivere/elastic.v5"
 	"io"
 	"context"
 )
@@ -22,7 +22,7 @@ type ElasticsearchGet struct {
 	out chan *Message
 	sync *sync.WaitGroup
 	fs *pflag.FlagSet
-	client *elastic.Client
+	client *elastic5.Client
 	stdin io.WriteCloser
 	stdout io.ReadCloser
 	flags *ElasticsearchGetFlags
@@ -32,6 +32,7 @@ type ElasticsearchGet struct {
 }
 
 type ElasticsearchGetFlags struct {
+	Version int
 	QueryStringQuery string
 	Server string
 	Index string
@@ -51,6 +52,7 @@ type ElasticsearchGetFlags struct {
 func (m *ElasticsearchGet) SetFlagSet(fs *pflag.FlagSet) {
 	m.flags = &ElasticsearchGetFlags{}
 
+	fs.IntVar(&m.flags.Version, "version", 5, "Set the elasticsearch library version")
 	fs.StringVar(&m.flags.From, "from", "now-15m", "Elasticsearch date for gte")
 	fs.StringVar(&m.flags.To, "to", "now", "Elasticsearch date for lt. Has not effect when \"--tail\" is used")
 	fs.BoolVar(&m.flags.Asc, "asc", false, "Sort by asc")
@@ -108,20 +110,27 @@ func (m *ElasticsearchGet) Init(global *GlobalFlags) (error) {
 		m.flags.ScrollSize = m.flags.Size
 	}
 
-	setURL := elastic.SetURL(m.flags.Server)
+	setURL := elastic5.SetURL(m.flags.Server)
 
 	var err error
-	m.client, err = elastic.NewClient(setURL, elastic.SetSniff(false))
-	if err != nil {
-		return errors.Wrapf(err, "Err creating connection to server %s", m.flags.Server)
+
+	switch version := m.flags.Version; version {
+		case 5:
+			m.client, err = elastic5.NewClient(setURL, elastic5.SetSniff(false))
+			if err != nil {
+				return errors.Wrapf(err, "Err creating connection to server %s", m.flags.Server)
+			}
+		default:
+			return errors.Errorf("Version %d is not supported", version)
 	}
+
 
 	return nil
 }
 
-func ElasticsearchGetGenerateBoolQuery(flags *ElasticsearchGetFlags, gte bool) (bq *elastic.BoolQuery) {
-		qs := elastic.NewQueryStringQuery(flags.QueryStringQuery)
-		rq := elastic.NewRangeQuery(flags.TimestampField)
+func ElasticsearchGetGenerateBoolQuery(flags *ElasticsearchGetFlags, gte bool) (bq *elastic5.BoolQuery) {
+		qs := elastic5.NewQueryStringQuery(flags.QueryStringQuery)
+		rq := elastic5.NewRangeQuery(flags.TimestampField)
 
 		if ! flags.Tail {
 			rq.Lt(flags.To)
@@ -133,7 +142,7 @@ func ElasticsearchGetGenerateBoolQuery(flags *ElasticsearchGetFlags, gte bool) (
 			rq.Gt(flags.From)
 		}
 
-		return elastic.NewBoolQuery().Must(qs, rq)
+		return elastic5.NewBoolQuery().Must(qs, rq)
 }
 
 func ElasticsearchGetDo(args *ElasticsearchGetFuncArgs, out chan *Message, close *bool) (ts string, err error) {
@@ -197,7 +206,7 @@ func (m *ElasticsearchGet) Start() {
 	}()
 }
 
-func ElasticsearchGetParseTimestamp(field string, hits []*elastic.SearchHit, asc bool) (ts string) {
+func ElasticsearchGetParseTimestamp(field string, hits []*elastic5.SearchHit, asc bool) (ts string) {
 	pos := 0
 	if asc {
 		pos = len(hits) - 1
@@ -336,7 +345,7 @@ func ElasticsearchGetDoSearch(args *ElasticsearchGetFuncArgs, out chan *Message,
 	return ts, nil
 }
 
-func ElasticsearchGetClearScroll(client *elastic.Client, id string) (err error) {
+func ElasticsearchGetClearScroll(client *elastic5.Client, id string) (err error) {
 	_, err = client.ClearScroll(id).
 		Do(context.Background())
 	if err != nil {
@@ -347,9 +356,9 @@ func ElasticsearchGetClearScroll(client *elastic.Client, id string) (err error) 
 }
 
 type ElasticsearchGetFuncArgs struct {
-	Client *elastic.Client
+	Client *elastic5.Client
 	Flags *ElasticsearchGetFlags
-	BoolQuery *elastic.BoolQuery
+	BoolQuery *elastic5.BoolQuery
 }
 
 func (m *ElasticsearchGet) Wait() {
