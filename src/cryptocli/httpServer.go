@@ -1,6 +1,8 @@
 package main
 
 import (
+	"encoding/json"
+	"net/url"
 	"time"
 	"io"
 	"net/http"
@@ -20,6 +22,7 @@ type HTTPServerHandleOptions struct {
 	Relayc chan *Message
 	Init bool
 	Sync *sync.WaitGroup
+	Json bool
 
 	sync.Mutex
 }
@@ -32,11 +35,13 @@ type HTTPServer struct {
 	ln net.Listener
 	connectTimeout time.Duration
 	sync *sync.WaitGroup
+	json bool
 }
 
 func (m *HTTPServer) SetFlagSet(fs *pflag.FlagSet) {
 	fs.StringVar(&m.addr, "addr", "", "Listen on an address")
 	fs.DurationVar(&m.connectTimeout, "connect-timeout", 30 * time.Second, "Max amount of time to wait for a potential connection when pipeline is closing")
+	fs.BoolVar(&m.json, "json", false, "Dump the metadata and the data of the request in a json line format.")
 }
 
 func (m *HTTPServer) In(in chan *Message) (chan *Message) {
@@ -70,21 +75,71 @@ func httpServerHandleIn(in chan *Message, w http.ResponseWriter, wait, done *syn
 	}
 }
 
-func httpServerHandleOut(out chan *Message, body io.ReadCloser, wait *sync.WaitGroup) {
+func HttpMarshalRequestBody(data []byte) (payload []byte, err error) {
+	return json.Marshal(&HttpRequestBody{Body: data,})
+}
+
+func httpServerHandleOut(out chan *Message, body io.ReadCloser, formatJson bool, wait *sync.WaitGroup) {
 	defer close(out)
 	defer wait.Done()
 	defer body.Close()
 
-	err := ReadBytesSendMessages(body, out)
+	var err error
+	err = ReadBytesStep(body, func(data []byte) (bool) {
+		if formatJson {
+			data, err = HttpMarshalRequestBody(data)
+			if err != nil {
+				log.Println(err.Error())
+				return false
+			}
+		}
+
+		SendMessage(data, out)
+		return true
+	})
 	if err != nil {
 		log.Println(errors.Wrap(err, "Error reading tcp connection in http-server"))
 	}
 }
 
+type HttpRequestMeta struct {
+	Method string `json:"method"`
+	Header http.Header `json:"headers"`
+	Proto string `json:"proto"`
+	URL *url.URL `json:"url"`
+	RequestURI string `json:"request_uri"`
+	RemoteAddr string `json:"remote_addr"`
+	ContentLength int64 `json:"content_length"`
+	Host string `json:"host"`
+}
+
+type HttpRequestBody struct {
+	Body []byte `json:"body"`
+}
+
+func HttpMarshalRequestMeta(r *http.Request) (payload []byte, err error) {
+	hrm := &HttpRequestMeta{
+			Method: r.Method,
+			Header: r.Header,
+			Proto: r.Proto,
+			URL: r.URL,
+			RequestURI: r.RequestURI,
+			RemoteAddr: r.RemoteAddr,
+			ContentLength: r.ContentLength,
+			Host: r.Host,
+		}
+
+		payload, err = json.Marshal(hrm)
+		if err != nil {
+			return nil, errors.Wrapf(err, "Err marshaling %T into %T", r, hrm)
+		}
+
+		return payload, nil
+}
+
 func httpServerHandle(in, out chan *Message, options *HTTPServerHandleOptions) (func(w http.ResponseWriter, r *http.Request)) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		options.Lock()
-
 		if options.Init {
 			w.WriteHeader(500)
 			options.Unlock()
@@ -98,6 +153,18 @@ func httpServerHandle(in, out chan *Message, options *HTTPServerHandleOptions) (
 
 		options.Waitc <- struct{}{}
 
+		if options.Json {
+			payload, err := HttpMarshalRequestMeta(r)
+			if err != nil {
+				log.Println(err.Error())
+				r.Body.Close()
+				close(out)
+				return
+			}
+
+			SendMessage(payload, out)
+		}
+
 		// done synchronises the write part of the 2 go routines
 		done := &sync.WaitGroup{}
 		done.Add(1)
@@ -109,7 +176,7 @@ func httpServerHandle(in, out chan *Message, options *HTTPServerHandleOptions) (
 		wait.Add(1)
 
 		go httpServerHandleIn(in, w, wait, done)
-		go httpServerHandleOut(out, r.Body, wait)
+		go httpServerHandleOut(out, r.Body, options.Json, wait)
 
 		done.Wait()
 	}
@@ -145,6 +212,7 @@ func (m *HTTPServer) Start() {
 		Init: false,
 		Waitc: waitc,
 		Sync: m.sync,
+		Json: m.json,
 	}
 
 	mux := http.NewServeMux()
