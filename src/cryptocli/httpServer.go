@@ -1,6 +1,8 @@
 package main
 
 import (
+	"encoding/json"
+	"net/url"
 	"time"
 	"io"
 	"net/http"
@@ -75,16 +77,43 @@ func httpServerHandleOut(out chan *Message, body io.ReadCloser, wait *sync.WaitG
 	defer wait.Done()
 	defer body.Close()
 
-	err := ReadBytesSendMessages(body, out)
+	err := ReadBytesStep(body, func(payload []byte) (bool) {
+		hrb := &HttpRequestBody{Body: payload,}
+		payload, err := json.Marshal(hrb)
+		if err != nil {
+			log.Println(err.Error())
+		}
+		log.Println(string(payload[:]))
+		SendMessage(payload, out)
+		return true
+	})
 	if err != nil {
 		log.Println(errors.Wrap(err, "Error reading tcp connection in http-server"))
 	}
+	//err := ReadBytesSendMessages(body, out)
+	//if err != nil {
+	//	log.Println(errors.Wrap(err, "Error reading tcp connection in http-server"))
+	//}
+}
+
+type HttpRequestMeta struct {
+	Method string `json:"method"`
+	Header http.Header `json:"headers"`
+	Proto string `json:"proto"`
+	URL *url.URL `json:"url"`
+	RequestURI string `json:"request_uri"`
+	RemoteAddr string `json:"remote_addr"`
+	ContentLength int64 `json:"content_length"`
+	Host string `json:"host"`
+}
+
+type HttpRequestBody struct {
+	Body []byte `json:"body"`
 }
 
 func httpServerHandle(in, out chan *Message, options *HTTPServerHandleOptions) (func(w http.ResponseWriter, r *http.Request)) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		options.Lock()
-
 		if options.Init {
 			w.WriteHeader(500)
 			options.Unlock()
@@ -107,7 +136,23 @@ func httpServerHandle(in, out chan *Message, options *HTTPServerHandleOptions) (
 		// before writing
 		wait := &sync.WaitGroup{}
 		wait.Add(1)
+		hrm := &HttpRequestMeta{
+			Method: r.Method,
+			Header: r.Header,
+			Proto: r.Proto,
+			URL: r.URL,
+			RequestURI: r.RequestURI,
+			RemoteAddr: r.RemoteAddr,
+			ContentLength: r.ContentLength,
+			Host: r.Host,
+		}
 
+		payload, err := json.Marshal(hrm)
+		if err != nil {
+			log.Println(err.Error())
+		}
+
+		log.Println(string(payload[:]))
 		go httpServerHandleIn(in, w, wait, done)
 		go httpServerHandleOut(out, r.Body, wait)
 
