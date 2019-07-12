@@ -8,6 +8,7 @@ import (
 	"log"
 	"io"
 	"crypto/tls"
+	"time"
 )
 
 func init() {
@@ -20,10 +21,7 @@ type HTTP struct {
 	sync *sync.WaitGroup
 	url string
 	method string
-	data bool
-	reader io.Reader
-	writer io.WriteCloser
-	req *http.Request
+	dataTimeout time.Duration
 	insecure bool
 	cancel chan struct{}
 }
@@ -31,7 +29,7 @@ type HTTP struct {
 func (m *HTTP) SetFlagSet(fs *pflag.FlagSet) {
 	fs.StringVar(&m.url, "url", "", "HTTP url to query")
 	fs.StringVar(&m.method, "method", "GET", "Set the method to query")
-	fs.BoolVar(&m.data, "data", false, "Send data from the pipeline to the server")
+	fs.DurationVar(&m.dataTimeout, "data-timeout", 5 * time.Second, "Wait before closing the input pipeline")
 	fs.BoolVar(&m.insecure, "insecure", false, "Don't valid the TLS certificate chain")
 }
 
@@ -47,18 +45,7 @@ func (m *HTTP) Out(out chan *Message) (chan *Message) {
 	return out
 }
 
-func (m *HTTP) Init(global *GlobalFlags) (error) {
-	if m.data {
-		m.reader, m.writer = io.Pipe()
-	}
-
-	req, err := http.NewRequest(m.method, m.url, m.reader)
-	if err != nil {
-		return errors.Wrap(err, "Error generating the http request")
-	}
-
-	m.req = req
-
+func (m HTTP) Init(global *GlobalFlags) (error) {
 	return nil
 }
 
@@ -68,14 +55,17 @@ func (m HTTP) Start() {
 	go func() {
 		// This waits until a first message is received from input
 		// otherwise for some reason, it makes the http client hang
-		wait := make(chan struct{}, 0)
+		reqc := make(chan *HttpRequestC, 0)
 
 		options := &HTTPOptions{
 			Insecure: m.insecure,
+			Url: m.url,
+			Method: m.method,
+			DataTimeout: m.dataTimeout,
 		}
 
-		go httpStartIn(m.in, m.writer, wait, m.sync)
-		go httpStartOut(m.out, m.req, options, wait, m.sync, m.cancel)
+		go httpStartIn(m.in, options, reqc, m.sync)
+		go httpStartOut(m.out, httpCreateTransport(options), reqc, m.sync, m.cancel)
 	}()
 }
 
@@ -86,30 +76,43 @@ func (m HTTP) Wait() {
 	for range m.in {}
 }
 
-func httpStartIn(in chan *Message, writer io.WriteCloser, wait chan struct{}, wg *sync.WaitGroup) {
+type HttpRequestC struct {
+	Request *http.Request
+	Error error
+}
+
+func httpStartIn(in chan *Message, options *HTTPOptions, reqc chan *HttpRequestC, wg *sync.WaitGroup) {
 	defer wg.Done()
 
-	if writer == nil {
-		wait <- struct{}{}
-		close(wait)
+	reader, writer := io.Pipe()
+
+	started := false
+	select {
+		case <- time.NewTicker(options.DataTimeout).C:
+			log.Println("No data received from the pipeline, sending the request...")
+		case message, closed := <- in:
+			if ! closed {
+				break
+			}
+
+			started = true
+			req, err := http.NewRequest(options.Method, options.Url, reader)
+			reqc <- &HttpRequestC{Request: req, Error: err,}
+			writer.Write(message.Payload)
+	}
+
+	if ! started {
+		req, err := http.NewRequest(options.Method, options.Url, reader)
+		reqc <- &HttpRequestC{Request: req, Error: err,}
+		writer.Close()
 
 		for range in {}
 
 		return
 	}
 
-	started := false
 	for message := range in {
-		if ! started {
-			close(wait)
-			started = true
-		}
-
 		writer.Write(message.Payload)
-	}
-
-	if ! started {
-		close(wait)
 	}
 
 	writer.Close()
@@ -117,6 +120,9 @@ func httpStartIn(in chan *Message, writer io.WriteCloser, wait chan struct{}, wg
 
 type HTTPOptions struct {
 	Insecure bool
+	Url string
+	Method string
+	DataTimeout time.Duration
 }
 
 // Copy http.DefaultTransport in order to change it and keep the defaults
@@ -145,7 +151,7 @@ func httpCreateTLSConfig(options *HTTPOptions) (config *tls.Config) {
 	}
 }
 
-func httpStartOut(out chan *Message, req *http.Request, options *HTTPOptions, wait chan struct{}, wg *sync.WaitGroup, cancel chan struct{}) {
+func httpStartOut(out chan *Message, transport http.RoundTripper, reqc chan *HttpRequestC, wg *sync.WaitGroup, cancel chan struct{}) {
 	canceled := false
 	defer wg.Done()
 	defer func() {
@@ -155,15 +161,19 @@ func httpStartOut(out chan *Message, req *http.Request, options *HTTPOptions, wa
 	}()
 	defer close(out)
 
-	client := &http.Client{
-		Transport: httpCreateTransport(options),
+	r := <- reqc
+	if r.Error != nil {
+		log.Println(errors.Wrap(r.Error, "Error generating the http request").Error())
+		return
 	}
 
-	<- wait
+	client := &http.Client{
+		Transport: transport,
+	}
 
-	resp, err := client.Do(req)
+	resp, err := client.Do(r.Request)
 	if err != nil {
-		log.Println(errors.Wrap(err, "Error in http response"))
+		log.Println(errors.Wrap(err, "Error in http response").Error())
 		return
 	}
 	defer resp.Body.Close()
