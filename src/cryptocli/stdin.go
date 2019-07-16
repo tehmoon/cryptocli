@@ -64,7 +64,7 @@ func NewStdin() (Module) {
 	}
 }
 
-func stdinStartOutRead(write chan *Message, closed *StdinCloseSync) {
+func stdinStartOutRead(write chan *Message, closed *StdinCloseSync, syn chan struct{}) {
 	err := ReadBytesStep(os.Stdin, func(payload []byte) (bool) {
 		closed.RLock()
 		if closed.Closed {
@@ -85,6 +85,7 @@ func stdinStartOutRead(write chan *Message, closed *StdinCloseSync) {
 		close(write)
 	}
 	closed.Unlock()
+	close(syn)
 }
 
 type StdinCloseSync struct {
@@ -99,9 +100,14 @@ func stdinStartOut(write chan *Message, cancel chan struct{}) {
 		Closed: false,
 	}
 
-	go stdinStartOutRead(write, closed)
+	syn := make(chan struct{}, 0)
 
-	<- cancel
+	go stdinStartOutRead(write, closed, syn)
+
+	select {
+		case <- cancel:
+		case <- syn:
+	}
 
 	closed.Lock()
 	if ! closed.Closed {
@@ -114,7 +120,7 @@ func stdinStartOut(write chan *Message, cancel chan struct{}) {
 func stdinStartIn(read chan *Message, cancel chan struct{}, wg *sync.WaitGroup) {
 	for range read {}
 
-	cancel <- struct{}{}
+	close(cancel)
 
 	wg.Done()
 }

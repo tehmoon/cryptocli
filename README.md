@@ -10,6 +10,10 @@ This drastically helps by setting up a pipeline where data flows from sources to
 
 Use cryptocli on multiple platform thanks to the pure Golang implementation of modules.
 
+## CAVEATS
+
+- Elasticsearch modules are compatible > 7.x
+
 ## WIP
 
 This is still a work in progress as I am migrating modules one by one with new features along the way!
