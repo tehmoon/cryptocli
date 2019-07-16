@@ -9,6 +9,9 @@ import (
 	"io"
 	"crypto/tls"
 	"time"
+	"path"
+	"encoding/json"
+	"fmt"
 )
 
 func init() {
@@ -24,6 +27,7 @@ type HTTP struct {
 	dataTimeout time.Duration
 	insecure bool
 	cancel chan struct{}
+	json bool
 }
 
 func (m *HTTP) SetFlagSet(fs *pflag.FlagSet) {
@@ -31,6 +35,7 @@ func (m *HTTP) SetFlagSet(fs *pflag.FlagSet) {
 	fs.StringVar(&m.method, "method", "GET", "Set the method to query")
 	fs.DurationVar(&m.dataTimeout, "data-timeout", 5 * time.Second, "Wait before closing the input pipeline")
 	fs.BoolVar(&m.insecure, "insecure", false, "Don't valid the TLS certificate chain")
+	fs.BoolVar(&m.json, "json", false, "Read the metadata and the data from json lines instead of the \"--url\" and \"--method\" flag")
 }
 
 func (m *HTTP) In(in chan *Message) (chan *Message) {
@@ -62,6 +67,7 @@ func (m HTTP) Start() {
 			Url: m.url,
 			Method: m.method,
 			DataTimeout: m.dataTimeout,
+			Json: m.json,
 		}
 
 		go httpStartIn(m.in, options, reqc, m.sync)
@@ -81,6 +87,12 @@ type HttpRequestC struct {
 	Error error
 }
 
+func HttpUnmarshalRequestMeta(payload []byte) (hrm *HttpRequestMeta, err error) {
+	err = json.Unmarshal(payload, &hrm)
+
+	return hrm, err
+}
+
 func httpStartIn(in chan *Message, options *HTTPOptions, reqc chan *HttpRequestC, wg *sync.WaitGroup) {
 	defer wg.Done()
 
@@ -95,10 +107,30 @@ func httpStartIn(in chan *Message, options *HTTPOptions, reqc chan *HttpRequestC
 				break
 			}
 
+			method, url := options.Method, options.Url
+			payload := message.Payload
+			if options.Json {
+				hrm, err := HttpUnmarshalRequestMeta(payload)
+				if err != nil {
+					writer.Close()
+					err = errors.Wrapf(err, "Error unmarshaling payload to type %T", hrm)
+					reqc <- &HttpRequestC{Error: err,}
+					return
+				}
+
+				method = hrm.Method
+				url = fmt.Sprintf("http://%s", path.Join(hrm.Host, hrm.RequestURI))
+				// TODO: wait for the second message to unmarshal the body
+				// TODO: change the scheme to https when using http-server with tls
+				// TODO: Add headers
+				// TODO: fix deadlock when json and timeout has been reached
+			}
+
 			started = true
-			req, err := http.NewRequest(options.Method, options.Url, reader)
+
+			req, err := http.NewRequest(method, url, reader)
 			reqc <- &HttpRequestC{Request: req, Error: err,}
-			writer.Write(message.Payload)
+			writer.Write(payload)
 	}
 
 	if ! started {
@@ -123,6 +155,7 @@ type HTTPOptions struct {
 	Url string
 	Method string
 	DataTimeout time.Duration
+	Json bool
 }
 
 // Copy http.DefaultTransport in order to change it and keep the defaults
