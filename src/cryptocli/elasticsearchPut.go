@@ -8,7 +8,7 @@ import (
 	"time"
 	"github.com/spf13/pflag"
 	"sync"
-	elastic5 "gopkg.in/olivere/elastic.v5"
+	"github.com/olivere/elastic"
 	"io"
 )
 
@@ -21,7 +21,7 @@ type ElasticsearchPut struct {
 	out chan *Message
 	sync *sync.WaitGroup
 	fs *pflag.FlagSet
-	client *elastic5.Client
+	client *elastic.Client
 	stdin io.WriteCloser
 	stdout io.ReadCloser
 	flags *ElasticsearchPutFlags
@@ -92,10 +92,10 @@ func (m *ElasticsearchPut) Init(global *GlobalFlags) (error) {
 		return errors.Errorf("Duration for flag %q cannot be negative", "--flush-interval")
 	}
 
-	setURL := elastic5.SetURL(m.flags.Server)
+	setURL := elastic.SetURL(m.flags.Server)
 
 	var err error
-	m.client, err = elastic5.NewClient(setURL, elastic5.SetSniff(false))
+	m.client, err = elastic.NewClient(setURL, elastic.SetSniff(false))
 	if err != nil {
 		return errors.Wrapf(err, "Err creating connection to server %s", m.flags.Server)
 	}
@@ -219,7 +219,7 @@ func (m *ElasticsearchPut) Start() {
 				data.Index = m.flags.Index
 			}
 
-			processor.Add(elastic5.NewBulkIndexRequest().
+			processor.Add(elastic.NewBulkIndexRequest().
 				Index(data.Index).
 				Type(data.Type).
 				Id(data.Id).
@@ -228,7 +228,7 @@ func (m *ElasticsearchPut) Start() {
 	}()
 }
 
-func ElasticsearchPutFlushCloseFunc(processor *elastic5.BulkProcessor, wg *sync.WaitGroup) {
+func ElasticsearchPutFlushCloseFunc(processor *elastic.BulkProcessor, wg *sync.WaitGroup) {
 	defer wg.Done()
 
 	var e error
@@ -275,11 +275,11 @@ func NewElasticsearchPut() (Module) {
 func ElasticsearchPutAfterFunc(
 	sync *sync.WaitGroup,
 	out chan *Message,
-) (elastic5.BulkAfterFunc) {
+) (elastic.BulkAfterFunc) {
 	return func(
 		executionId int64,
-		requests []elastic5.BulkableRequest,
-		response *elastic5.BulkResponse,
+		requests []elastic.BulkableRequest,
+		response *elastic.BulkResponse,
 		err error,
 	) {
 

@@ -18,6 +18,8 @@ GOPATH=$(pwd)/.go
 GOPATH=${GOPATH} go get -v ./... || true
 GOPATH=${GOPATH} go get -u -v ./... || true
 
+(cd "$GOPATH/src/github.com/olivere/elastic/"; git fetch -t -f; git reset --hard origin/release-branch.v7)
+
 GOPATH=${GOPATH} go build -o cryptocli-new .
 
 compile() {
