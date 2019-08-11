@@ -35,7 +35,6 @@ type ElasticsearchPutFlags struct {
 	Version int
 	Server string
 	Index string
-	Type string
 	Create bool
 	Raw bool
 	BulkSize int
@@ -49,7 +48,6 @@ func (m *ElasticsearchPut) SetFlagSet(fs *pflag.FlagSet) {
 	fs.IntVar(&m.flags.Version, "version", 5, "Set the elasticsearch library version")
 	fs.StringVar(&m.flags.Server, "server", "http://localhost:9200", "Specify elasticsearch server to query")
 	fs.StringVar(&m.flags.Index, "index", "", "Default index to write to. Uses \"_index\" if found in input")
-	fs.StringVar(&m.flags.Type, "type", "", "Default type to use. Uses \"_type\" if found in input")
 	fs.BoolVar(&m.flags.Create, "create", false, "Fail if the document ID already exists")
 	fs.BoolVar(&m.flags.Raw, "raw", false, "Use the json as the _source directly, automatically generating ids. Expects \"--index\" and \"--type\" to be present")
 	fs.IntVar(&m.flags.BulkActions, "bulk-actions", 500, "Max bulk actions when indexing")
@@ -76,8 +74,8 @@ func (m *ElasticsearchPut) Init(global *GlobalFlags) (error) {
 			return errors.Errorf("Version %d is not supported", version)
 	}
 
-	if m.flags.Raw && (m.flags.Index == "" || m.flags.Type == "") {
-		return errors.Errorf("Flag %q and %q cannot be empty when %q is set", "--index", "--type", "--raw")
+	if m.flags.Raw && m.flags.Index == "" {
+		return errors.Errorf("Flag %q cannot be empty when %q is set", "--index", "--raw")
 	}
 
 	if m.flags.BulkSize < 1 << 20 {
@@ -153,7 +151,6 @@ func (m *ElasticsearchPut) Start() {
 
 				data := &ElasticsearchPutInput{
 					Index: m.flags.Index,
-					Type: m.flags.Type,
 					Source: (*json.RawMessage)(&source),
 				}
 
@@ -205,23 +202,12 @@ func (m *ElasticsearchPut) Start() {
 				return
 			}
 
-			// Already not in raw mode
-			if data.Type == "" && m.flags.Type == "" {
-				log.Println("Type was not specified and not found in json input")
-				return
-			}
-
-			if data.Type == "" {
-				data.Type = m.flags.Type
-			}
-
 			if data.Index == "" {
 				data.Index = m.flags.Index
 			}
 
 			processor.Add(elastic.NewBulkIndexRequest().
 				Index(data.Index).
-				Type(data.Type).
 				Id(data.Id).
 				Doc(data.Source))
 		}
@@ -251,7 +237,6 @@ func ElasticsearchPutFlushCloseFunc(processor *elastic.BulkProcessor, wg *sync.W
 type ElasticsearchPutInput struct {
 	Id string `json:"_id"`
 	Index string `json:"_index"`
-	Type string `json:"_type"`
 	Source *json.RawMessage `json:"_source"`
 }
 
