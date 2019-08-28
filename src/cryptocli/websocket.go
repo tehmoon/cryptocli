@@ -10,6 +10,7 @@ import (
 	"io"
 	"time"
 	"crypto/tls"
+	"strings"
 )
 
 func init() {
@@ -27,12 +28,18 @@ type Websocket struct {
 	insecure bool
 	conn *websocket.Conn
 	closeTimeout time.Duration
+	binary bool
+	mode int
+	rawHeaders []string
+	headers http.Header
 }
 
 func (m *Websocket) SetFlagSet(fs *pflag.FlagSet) {
 	fs.StringVar(&m.url, "url", "", "HTTP url to query")
 	fs.BoolVar(&m.insecure, "insecure", false, "Don't valid the TLS certificate chain")
 	fs.DurationVar(&m.closeTimeout, "close-timeout", 5 * time.Second, "Duration to wait to read the close message")
+	fs.BoolVar(&m.binary, "binary", false, "Set the websocket message's metadata to binary")
+	fs.StringArrayVar(&m.rawHeaders, "header", make([]string, 0), "Send HTTP Headers")
 }
 
 func (m *Websocket) In(in chan *Message) (chan *Message) {
@@ -58,7 +65,23 @@ func (m *Websocket) Init(global *GlobalFlags) (err error) {
 		},
 	}
 
-	m.conn, _, err = dialer.Dial(m.url, nil)
+	if m.binary {
+		m.mode = websocket.BinaryMessage
+	}
+
+	for _, rawHeader := range m.rawHeaders {
+		header := strings.Split(rawHeader, ":")
+
+		key := header[0]
+		value := ""
+		if len(header) > 1 {
+			value = strings.Join(header[1:], ":")
+		}
+
+		m.headers.Set(key, value)
+	}
+
+	m.conn, _, err = dialer.Dial(m.url, m.headers)
 	if err != nil {
 		err = errors.Wrap(err, "Error dialing the websocket connection")
 
@@ -87,7 +110,7 @@ func (m Websocket) Start() {
 		defer m.sync.Done()
 
 		for message := range m.in {
-			err := m.conn.WriteMessage(websocket.BinaryMessage, message.Payload)
+			err := m.conn.WriteMessage(m.mode, message.Payload)
 			if err != nil {
 				err = errors.Wrap(err, "Error writing message to websocket")
 				log.Println(err.Error())
@@ -130,5 +153,7 @@ type WebsocketOptions struct {
 func NewWebsocket() (Module) {
 	return &Websocket{
 		sync: &sync.WaitGroup{},
+		mode: websocket.TextMessage,
+		headers: make(http.Header),
 	}
 }
