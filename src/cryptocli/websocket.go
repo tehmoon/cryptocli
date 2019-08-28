@@ -27,12 +27,15 @@ type Websocket struct {
 	insecure bool
 	conn *websocket.Conn
 	closeTimeout time.Duration
+	binary bool
+	mode int
 }
 
 func (m *Websocket) SetFlagSet(fs *pflag.FlagSet) {
 	fs.StringVar(&m.url, "url", "", "HTTP url to query")
 	fs.BoolVar(&m.insecure, "insecure", false, "Don't valid the TLS certificate chain")
 	fs.DurationVar(&m.closeTimeout, "close-timeout", 5 * time.Second, "Duration to wait to read the close message")
+	fs.BoolVar(&m.binary, "binary", false, "Set the websocket message's metadata to binary")
 }
 
 func (m *Websocket) In(in chan *Message) (chan *Message) {
@@ -56,6 +59,10 @@ func (m *Websocket) Init(global *GlobalFlags) (err error) {
 		TLSClientConfig: &tls.Config{
 			InsecureSkipVerify: m.insecure,
 		},
+	}
+
+	if m.binary {
+		m.mode = websocket.BinaryMessage
 	}
 
 	m.conn, _, err = dialer.Dial(m.url, nil)
@@ -87,7 +94,7 @@ func (m Websocket) Start() {
 		defer m.sync.Done()
 
 		for message := range m.in {
-			err := m.conn.WriteMessage(websocket.BinaryMessage, message.Payload)
+			err := m.conn.WriteMessage(m.mode, message.Payload)
 			if err != nil {
 				err = errors.Wrap(err, "Error writing message to websocket")
 				log.Println(err.Error())
@@ -130,5 +137,6 @@ type WebsocketOptions struct {
 func NewWebsocket() (Module) {
 	return &Websocket{
 		sync: &sync.WaitGroup{},
+		mode: websocket.TextMessage,
 	}
 }
