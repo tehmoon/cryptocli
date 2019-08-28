@@ -9,6 +9,7 @@ import (
 	"io"
 	"crypto/tls"
 	"time"
+	"strings"
 )
 
 func init() {
@@ -24,6 +25,8 @@ type HTTP struct {
 	dataTimeout time.Duration
 	insecure bool
 	cancel chan struct{}
+	rawHeaders []string
+	headers http.Header
 }
 
 func (m *HTTP) SetFlagSet(fs *pflag.FlagSet) {
@@ -31,6 +34,7 @@ func (m *HTTP) SetFlagSet(fs *pflag.FlagSet) {
 	fs.StringVar(&m.method, "method", "GET", "Set the method to query")
 	fs.DurationVar(&m.dataTimeout, "data-timeout", 5 * time.Second, "Wait before closing the input pipeline")
 	fs.BoolVar(&m.insecure, "insecure", false, "Don't valid the TLS certificate chain")
+	fs.StringArrayVar(&m.rawHeaders, "header", make([]string, 0), "Send HTTP Headers")
 }
 
 func (m *HTTP) In(in chan *Message) (chan *Message) {
@@ -45,7 +49,19 @@ func (m *HTTP) Out(out chan *Message) (chan *Message) {
 	return out
 }
 
-func (m HTTP) Init(global *GlobalFlags) (error) {
+func (m *HTTP) Init(global *GlobalFlags) (error) {
+	for _, rawHeader := range m.rawHeaders {
+		header := strings.Split(rawHeader, ":")
+
+		key := header[0]
+		value := ""
+		if len(header) > 1 {
+			value = strings.Join(header[1:], ":")
+		}
+
+		m.headers.Set(key, value)
+	}
+
 	return nil
 }
 
@@ -62,6 +78,7 @@ func (m HTTP) Start() {
 			Url: m.url,
 			Method: m.method,
 			DataTimeout: m.dataTimeout,
+			Headers: m.headers,
 		}
 
 		go httpStartIn(m.in, options, reqc, m.sync)
@@ -87,22 +104,26 @@ func httpStartIn(in chan *Message, options *HTTPOptions, reqc chan *HttpRequestC
 	reader, writer := io.Pipe()
 
 	started := false
-	select {
-		case <- time.NewTicker(options.DataTimeout).C:
-			log.Println("No data received from the pipeline, sending the request...")
-		case message, closed := <- in:
-			if ! closed {
-				break
-			}
+	if options.DataTimeout > 0 {
+		select {
+			case <- time.NewTicker(options.DataTimeout).C:
+				log.Println("No data received from the pipeline, sending the request...")
+			case message, closed := <- in:
+				if ! closed {
+					break
+				}
 
-			started = true
-			req, err := http.NewRequest(options.Method, options.Url, reader)
-			reqc <- &HttpRequestC{Request: req, Error: err,}
-			writer.Write(message.Payload)
+				started = true
+				req, err := http.NewRequest(options.Method, options.Url, reader)
+				req.Header = options.Headers
+				reqc <- &HttpRequestC{Request: req, Error: err,}
+				writer.Write(message.Payload)
+		}
 	}
 
 	if ! started {
 		req, err := http.NewRequest(options.Method, options.Url, reader)
+		req.Header = options.Headers
 		reqc <- &HttpRequestC{Request: req, Error: err,}
 		writer.Close()
 
@@ -123,6 +144,7 @@ type HTTPOptions struct {
 	Url string
 	Method string
 	DataTimeout time.Duration
+	Headers http.Header
 }
 
 // Copy http.DefaultTransport in order to change it and keep the defaults
@@ -199,5 +221,6 @@ func NewHTTP() (Module) {
 	return &HTTP{
 		sync: &sync.WaitGroup{},
 		cancel: make(chan struct{}),
+		headers: make(http.Header),
 	}
 }
