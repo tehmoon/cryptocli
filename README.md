@@ -120,7 +120,7 @@ pwd=DEADBEEF ./cryptocli --std  -- \
   aes-gcm --decrypt --password-in "env --var pwd"
 ```
 
-### stdin -> line -> elasticsearch-put -> stdout: save each line in elasticsearch
+### stdin -> byte -> elasticsearch-put -> stdout: save each line in elasticsearch
 
 Creates a JSON data structure like this:
 
@@ -138,7 +138,8 @@ This is ordered by `@timestamp`. Since elasticsearch does not have a timestamp n
 seq 1 10 | \
 cryptocli \
   -- stdin \
-  -- line \
+  -- byte \
+    --delimiter $'\n'
   -- elasticsearch-put \
     --index bluh \
     --server http://localhost:9200 \
@@ -185,54 +186,49 @@ It will stop and show the help until there are no help flags remaining.
 Usage of ./src/cryptocli/cryptocli: [options] -- <module> [options] -- <module> [options] -- ...
       --std   Read from stdin and writes to stdout instead of setting both modules
 List of all modules:
-  env: Read an environment variable
-  gunzip: Gunzip de-compress
-  unzip: Buffer the zip file to disk and read selected file patterns.
-  aes-gcm: AES-GCM encryption/decryption
-  elasticsearch-get: Query elasticsearch and output json on each line
-  stdout: Writes to stdout
-  tcp-server: Listens TCP and wait for a single connection to complete
-  file: Reads from a file or write to a file.
-  fork: Start a program and attach stdin and stdout to the pipeline
-  hex: Hex de-compress
-  line: Produce messages per lines
-  lower: Lowercase all ascii characters
-  upper: Uppercase all ascii characters
-  websocket: Connects to a websocket webserver
-  base64: Base64 decode or encode
-  elasticsearch-put: Insert to elasticsearch from JSON
-  http: Connects to an HTTP webserver
-  http-server: Create an http web webserver
-  null: Discard all incoming data
   s3: Downloads or uploads a file from s3
-  stdin: Reads from stdin
-  tcp: Connects to TCP
-  dgst: Dgst decode or encode
-  gzip: Gzip compress
-  tee: Create a new one way pipeline to copy the data over
   websocket-server: Create an websocket webserver
+  elasticsearch-get: Query elasticsearch and output json on each line
+  stdin: Reads from stdin
+  tcp-server: Listens TCP and wait for a single connection to complete
+  tee: Create a new one way pipeline to copy the data over
+  unzip: Buffer the zip file to disk and read selected file patterns.
+  websocket: Connects to a websocket webserver
+  http-server: Create an http web webserver
+  dgst: Dgst decode or encode
+  gunzip: Gunzip de-compress
+  http: Connects to an HTTP webserver
+  aes-gcm: AES-GCM encryption/decryption
+  base64: Base64 decode or encode
+  fork: Start a program and attach stdin and stdout to the pipeline
+  gzip: Gzip compress
+  line: Produce messages per lines
+  upper: Uppercase all ascii characters
+  byte: Byte manipulation module
+  elasticsearch-put: Insert to elasticsearch from JSON
+  file: Reads from a file or write to a file.
+  null: Discard all incoming data
+  stdout: Writes to stdout
+  tcp: Connects to TCP
+  env: Read an environment variable
+  hex: Hex de-compress
+  lower: Lowercase all ascii characters
 ```
 
 ### Modules
 
 ```
-Usage of module "env":
-      --var string   Variable to read from
+Usage of module "s3":
+      --bucket string   Specify the bucket name
+      --path string     Object path
+      --read            Read from s3
+      --write           Write to s3
 ```
 ```
-Usage of module "gunzip":
-```
-```
-Usage of module "unzip":
-      --pattern stringArray   Read the file each time it matches a pattern. (default [.*])
-```
-```
-Usage of module "aes-gcm":
-      --128                  128 bits key (default true)
-      --256                  256 bits key
-      --decrypt              Decrypt
-      --encrypt              Encrypt
-      --password-in string   Pipeline definition to set the password
+Usage of module "websocket-server":
+      --addr string                Listen on an address
+      --close-timeout duration     Duration to wait to read the close message (default 5s)
+      --connect-timeout duration   Duration to wait for a websocket connection (default 15s)
 ```
 ```
 Usage of module "elasticsearch-get":
@@ -253,7 +249,7 @@ Usage of module "elasticsearch-get":
       --version int              Set the elasticsearch library version (default 5)
 ```
 ```
-Usage of module "stdout":
+Usage of module "stdin":
 ```
 ```
 Usage of module "tcp-server":
@@ -263,30 +259,12 @@ Usage of module "tcp-server":
       --listen string              Listen on addr:port. If port is 0, random port will be assigned
 ```
 ```
-Usage of module "file":
-      --append        Append data instead of truncating when writting
-      --mode uint32   Set file's mode if created when writting (default 416)
-      --path string   File's path
-      --read          Read from a file
-      --write         Write to a file
+Usage of module "tee":
+      --pipe string   Pipeline definition
 ```
 ```
-Usage of module "fork":
-```
-```
-Usage of module "hex":
-      --decode   Hexadecimal decode
-      --encode   Hexadecimal encode
-```
-```
-Usage of module "line":
-      --new-line   Append a new line to each message
-```
-```
-Usage of module "lower":
-```
-```
-Usage of module "upper":
+Usage of module "unzip":
+      --pattern stringArray   Read the file each time it matches a pattern. (default [.*])
 ```
 ```
 Usage of module "websocket":
@@ -297,9 +275,59 @@ Usage of module "websocket":
       --url string               HTTP url to query
 ```
 ```
+Usage of module "http-server":
+      --addr string                Listen on an address
+      --connect-timeout duration   Max amount of time to wait for a potential connection when pipeline is closing (default 30s)
+```
+```
+Usage of module "dgst":
+      --algo string   Hash algorithm to use: md5, sha1, sha256, sha512, sha3_224, sha3_256, sha3_384, sha3_512, blake2s_256, blake2b_256, blake2b_384, blake2b_512, ripemd160
+```
+```
+Usage of module "gunzip":
+```
+```
+Usage of module "http":
+      --data-timeout duration   Wait before closing the input pipeline (default 5s)
+      --header stringArray      Send HTTP Headers
+      --insecure                Don't valid the TLS certificate chain
+      --method string           Set the method to query (default "GET")
+      --url string              HTTP url to query
+```
+```
+Usage of module "aes-gcm":
+      --128                  128 bits key (default true)
+      --256                  256 bits key
+      --decrypt              Decrypt
+      --encrypt              Encrypt
+      --password-in string   Pipeline definition to set the password
+```
+```
 Usage of module "base64":
       --decode   Base64 decode
       --encode   Base64 encode
+```
+```
+Usage of module "fork":
+```
+```
+Usage of module "gzip":
+```
+```
+Usage of module "line":
+      --new-line   Append a new line to each message
+```
+```
+Usage of module "upper":
+```
+```
+Usage of module "byte":
+      --append string       Append string to messages
+      --delimiter string    Split stream into messages delimited by specified by the regexp delimiter. Mutually exclusive with "--message-size"
+      --max-messages int    Stream x messages after skipped messages
+      --message-size int    Split stream into messages of byte length. Mutually exclusive with "--delimiter" (default 16384)
+      --prepend string      Prepend string to messages
+      --skip-messages int   Skip x messages after splitting
 ```
 ```
 Usage of module "elasticsearch-put":
@@ -313,30 +341,18 @@ Usage of module "elasticsearch-put":
       --version int               Set the elasticsearch library version (default 5)
 ```
 ```
-Usage of module "http":
-      --data-timeout duration   Wait before closing the input pipeline (default 5s)
-      --header stringArray      Send HTTP Headers
-      --insecure                Don't valid the TLS certificate chain
-      --method string           Set the method to query (default "GET")
-      --url string              HTTP url to query
-```
-```
-Usage of module "http-server":
-      --addr string                Listen on an address
-      --connect-timeout duration   Max amount of time to wait for a potential connection when pipeline is closing (default 30s)
+Usage of module "file":
+      --append        Append data instead of truncating when writting
+      --mode uint32   Set file's mode if created when writting (default 416)
+      --path string   File's path
+      --read          Read from a file
+      --write         Write to a file
 ```
 ```
 Usage of module "null":
 ```
 ```
-Usage of module "s3":
-      --bucket string   Specify the bucket name
-      --path string     Object path
-      --read            Read from s3
-      --write           Write to s3
-```
-```
-Usage of module "stdin":
+Usage of module "stdout":
 ```
 ```
 Usage of module "tcp":
@@ -345,21 +361,16 @@ Usage of module "tcp":
       --tls string    Use TLS with servername in client hello
 ```
 ```
-Usage of module "dgst":
-      --algo string   Hash algorithm to use: md5, sha1, sha256, sha512, sha3_224, sha3_256, sha3_384, sha3_512, blake2s_256, blake2b_256, blake2b_384, blake2b_512, ripemd160
+Usage of module "env":
+      --var string   Variable to read from
 ```
 ```
-Usage of module "gzip":
+Usage of module "hex":
+      --decode   Hexadecimal decode
+      --encode   Hexadecimal encode
 ```
 ```
-Usage of module "tee":
-      --pipe string   Pipeline definition
-```
-```
-Usage of module "websocket-server":
-      --addr string                Listen on an address
-      --close-timeout duration     Duration to wait to read the close message (default 5s)
-      --connect-timeout duration   Duration to wait for a websocket connection (default 15s)
+Usage of module "lower":
 ```
 
 ## Design
