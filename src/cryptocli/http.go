@@ -1,155 +1,207 @@
 package main
 
 import (
+	"io"
+	"time"
 	"net/http"
 	"github.com/tehmoon/errors"
 	"github.com/spf13/pflag"
 	"sync"
 	"log"
-	"io"
 	"crypto/tls"
-	"time"
-	"strings"
 )
 
 func init() {
-	MODULELIST.Register("http", "Connects to an HTTP webserver", NewHTTP)
+	MODULELIST.Register("http", "Makes HTTP requests", NewHTTP)
 }
 
 type HTTP struct {
-	in chan *Message
-	out chan *Message
-	sync *sync.WaitGroup
 	url string
-	method string
-	dataTimeout time.Duration
 	insecure bool
-	cancel chan struct{}
-	rawHeaders []string
-	headers http.Header
+	readTimeout time.Duration
+	headers []string
+	method string
+	data bool
 }
 
-func (m *HTTP) SetFlagSet(fs *pflag.FlagSet) {
-	fs.StringVar(&m.url, "url", "", "HTTP url to query")
-	fs.StringVar(&m.method, "method", "GET", "Set the method to query")
-	fs.DurationVar(&m.dataTimeout, "data-timeout", 5 * time.Second, "Wait before closing the input pipeline")
-	fs.BoolVar(&m.insecure, "insecure", false, "Don't valid the TLS certificate chain")
-	fs.StringArrayVar(&m.rawHeaders, "header", make([]string, 0), "Send HTTP Headers")
+func (m *HTTP) SetFlagSet(fs *pflag.FlagSet, args []string) {
+	fs.StringVar(&m.url, "url", "", "HTTP server to connect to")
+	fs.BoolVar(&m.insecure, "insecure", false, "Don't verify the tls certificate chain")
+	fs.DurationVar(&m.readTimeout, "read-timeout", 15 * time.Second, "Read timeout for the tcp connection")
+	fs.StringVar(&m.method, "method", "GET", "HTTP Verb")
+	fs.StringArrayVar(&m.headers, "header", make([]string, 0), "Set header in the form of \"header: value\"")
+	fs.BoolVar(&m.data, "data", false, "Read data from the stream and send it before reading the response")
 }
 
-func (m *HTTP) In(in chan *Message) (chan *Message) {
-	m.in = in
+func (m *HTTP) Init(in, out chan *Message, global *GlobalFlags) (error) {
+	if m.readTimeout <= 0 {
+		return errors.Errorf("Flag %q has to be greater that 0", "--read-timeout")
+	}
 
-	return in
-}
+	go func(in, out chan *Message) {
+		wg := &sync.WaitGroup{}
 
-func (m *HTTP) Out(out chan *Message) (chan *Message) {
-	m.out = out
+		init := false
+		outc := make(MessageChannel)
 
-	return out
-}
-
-func (m *HTTP) Init(global *GlobalFlags) (error) {
-	for _, rawHeader := range m.rawHeaders {
-		header := strings.Split(rawHeader, ":")
-
-		key := header[0]
-		value := ""
-		if len(header) > 1 {
-			value = strings.Join(header[1:], ":")
+		out <- &Message{
+			Type: MessageTypeChannel,
+			Interface: outc,
 		}
 
-		m.headers.Set(key, value)
-	}
+		LOOP: for message := range in {
+			switch message.Type {
+				case MessageTypeTerminate:
+					if ! init {
+						close(outc)
+					}
+					wg.Wait()
+					out <- message
+					break LOOP
+				case MessageTypeChannel:
+					inc, ok := message.Interface.(MessageChannel)
+					if ok {
+						if ! init {
+							init = true
+						} else {
+							outc = make(MessageChannel)
+
+							out <- &Message{
+								Type: MessageTypeChannel,
+								Interface: outc,
+							}
+						}
+
+						wg.Add(1)
+						go httpStartHandler(m, inc, outc, m.data, wg)
+
+						if ! global.MultiStreams {
+							if ! init {
+								close(outc)
+							}
+							wg.Wait()
+							out <- &Message{Type: MessageTypeTerminate,}
+							break LOOP
+						}
+					}
+
+			}
+		}
+
+		wg.Wait()
+		// Last message will signal the closing of the channel
+		<- in
+		close(out)
+	}(in, out)
 
 	return nil
 }
 
-func (m HTTP) Start() {
-	m.sync.Add(2)
-
-	go func() {
-		// This waits until a first message is received from input
-		// otherwise for some reason, it makes the http client hang
-		reqc := make(chan *HttpRequestC, 0)
-
-		options := &HTTPOptions{
-			Insecure: m.insecure,
-			Url: m.url,
-			Method: m.method,
-			DataTimeout: m.dataTimeout,
-			Headers: m.headers,
-		}
-
-		go httpStartIn(m.in, options, reqc, m.sync)
-		go httpStartOut(m.out, httpCreateTransport(options), reqc, m.sync, m.cancel)
-	}()
-}
-
-func (m HTTP) Wait() {
-	m.cancel <- struct{}{}
-	m.sync.Wait()
-
-	for range m.in {}
-}
-
-type HttpRequestC struct {
-	Request *http.Request
-	Error error
-}
-
-func httpStartIn(in chan *Message, options *HTTPOptions, reqc chan *HttpRequestC, wg *sync.WaitGroup) {
+func httpStartHandler(m *HTTP, inc, outc MessageChannel, data bool, wg *sync.WaitGroup) {
 	defer wg.Done()
+	defer close(outc)
 
 	reader, writer := io.Pipe()
+	cancel := make(chan error)
+	goahead := &sync.WaitGroup{}
 
-	started := false
-	if options.DataTimeout > 0 {
-		select {
-			case <- time.NewTicker(options.DataTimeout).C:
-				log.Println("No data received from the pipeline, sending the request...")
-			case message, closed := <- in:
-				if ! closed {
-					break
-				}
+	wg.Add(1)
+	goahead.Add(1)
+	go func(inc MessageChannel, writer *io.PipeWriter, wg *sync.WaitGroup, goahead *sync.WaitGroup, cancel chan error) {
+		defer wg.Done()
+		defer DrainChannel(inc, nil)
+		defer func(cancel chan error) {
+			for err := range cancel {
+				log.Println(err.Error())
+			}
+		}(cancel)
 
-				started = true
-				req, err := http.NewRequest(options.Method, options.Url, reader)
-				req.Header = options.Headers
-				reqc <- &HttpRequestC{Request: req, Error: err,}
-				writer.Write(message.Payload)
+		if ! data {
+			goahead.Done()
+			writer.Close()
+			return
 		}
-	}
 
-	if ! started {
-		req, err := http.NewRequest(options.Method, options.Url, reader)
-		req.Header = options.Headers
-		reqc <- &HttpRequestC{Request: req, Error: err,}
+		signaled := false
+
+		LOOP: for {
+			select {
+				case err, opened := <- cancel:
+					if ! opened {
+						break LOOP
+					}
+
+					writer.CloseWithError(err)
+					return
+				case payload, opened := <- inc:
+					if ! signaled {
+						goahead.Done()
+						signaled = true
+					}
+
+					if ! opened {
+						break LOOP
+					}
+
+					_, err := writer.Write(payload)
+					if err != nil {
+						err = errors.Wrap(err, "Errror writing to pipe")
+						writer.CloseWithError(err)
+						return
+					}
+			}
+		}
+
 		writer.Close()
+	}(inc, writer, wg, goahead, cancel)
 
-		for range in {}
+	goahead.Wait()
 
+	req, err := http.NewRequest(m.method, m.url, reader)
+	if err != nil {
+		err = errors.Wrap(err, "Error creating new request")
+		cancel <- err
+		close(cancel)
 		return
 	}
 
-	for message := range in {
-		writer.Write(message.Payload)
+	headers := ParseHTTPHeaders(m.headers)
+	req.Host = headers.Get("host")
+
+	client := &http.Client{
+		Timeout: m.readTimeout,
+		Transport: httpCreateTransport(m.insecure),
 	}
 
-	writer.Close()
+	resp, err := client.Do(req)
+	if err != nil {
+		err = errors.Wrap(err, "Error sending request")
+		cancel <- err
+		close(cancel)
+		return
+	}
+
+	close(cancel)
+
+	if resp.Body == nil {
+		return
+	}
+
+	err = ReadBytesSendMessages(resp.Body, outc)
+	if err != nil {
+		err = errors.Wrap(err, "Error reading http body")
+		log.Println(err.Error())
+		return
+	}
+
+	resp.Body.Close()
 }
 
-type HTTPOptions struct {
-	Insecure bool
-	Url string
-	Method string
-	DataTimeout time.Duration
-	Headers http.Header
+func NewHTTP() (Module) {
+	return &HTTP{}
 }
 
-// Copy http.DefaultTransport in order to change it and keep the defaults
-// Returns http.DefaultTransport if cannot assert the http.RoundTripper interface
-func httpCreateTransport(options *HTTPOptions) (http.RoundTripper) {
+func httpCreateTransport(insecure bool) (http.RoundTripper) {
 	var (
 		tr = &http.Transport{}
 		rt = http.DefaultTransport
@@ -159,7 +211,7 @@ func httpCreateTransport(options *HTTPOptions) (http.RoundTripper) {
 	if ok {
 		*tr = *transport
 
-		tr.TLSClientConfig = httpCreateTLSConfig(options)
+		tr.TLSClientConfig = httpCreateTLSConfig(insecure)
 
 		rt = tr
 	}
@@ -167,60 +219,8 @@ func httpCreateTransport(options *HTTPOptions) (http.RoundTripper) {
 	return rt
 }
 
-func httpCreateTLSConfig(options *HTTPOptions) (config *tls.Config) {
+func httpCreateTLSConfig(insecure bool) (config *tls.Config) {
 	return &tls.Config{
-		InsecureSkipVerify: options.Insecure,
-	}
-}
-
-func httpStartOut(out chan *Message, transport http.RoundTripper, reqc chan *HttpRequestC, wg *sync.WaitGroup, cancel chan struct{}) {
-	canceled := false
-	defer wg.Done()
-	defer func() {
-		if ! canceled {
-			<- cancel
-		}
-	}()
-	defer close(out)
-
-	r := <- reqc
-	if r.Error != nil {
-		log.Println(errors.Wrap(r.Error, "Error generating the http request").Error())
-		return
-	}
-
-	client := &http.Client{
-		Transport: transport,
-	}
-
-	resp, err := client.Do(r.Request)
-	if err != nil {
-		log.Println(errors.Wrap(err, "Error in http response").Error())
-		return
-	}
-	defer resp.Body.Close()
-
-	err = ReadBytesStep(resp.Body, func(payload []byte) (bool) {
-		select {
-			case <- cancel:
-				canceled = true
-				return false
-			default:
-				SendMessage(payload, out)
-		}
-
-		return true
-	})
-	if err != nil {
-		log.Println(errors.Wrap(err, "Error reading body of http response"))
-		return
-	}
-}
-
-func NewHTTP() (Module) {
-	return &HTTP{
-		sync: &sync.WaitGroup{},
-		cancel: make(chan struct{}),
-		headers: make(http.Header),
+		InsecureSkipVerify: insecure,
 	}
 }

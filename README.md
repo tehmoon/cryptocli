@@ -1,61 +1,82 @@
-# Cryptocli v2
+[![Docker Automated build](https://img.shields.io/docker/automated/tehmoon/cryptocli)](https://hub.docker.com/r/tehmoon/cryptocli)
+
+# Cryptocli v3
 
 IT IS BACK WITH A NEW POWERFUL DESIGN!!!
 
-Cryptocli is a modern swiss army knife to data manipulation within complex pipelines.
+Cryptocli is the ultimate tool to data manipulation and transfer between protocols and data format.
 
-It is often really annoying to have to use some tools on unix, others on windows to do simple things.
+It is often really annoying to have to use some tools on unix, other tools on windows to do simple things.
 
 This drastically helps by setting up a pipeline where data flows from sources to sinks or gets modified.
 
 Use cryptocli on multiple platform thanks to the pure Golang implementation of modules.
 
+Cryptocli also support multi streams, meaning that you can now have multiple clients that will be
+connected to separate pipelines.
+
+## Executables
+
+Run it on docker:
+
+```
+docker run --rm tehmoon/cryptocli
+```
+
+Find executables in the [release page](https://github.com/tehmoon/cryptocli/releases)
+
 ## CAVEATS
 
 - Elasticsearch modules are compatible > 7.x
-
-## WIP
-
-This is still a work in progress as I am migrating modules one by one with new features along the way!
 
 ## Examples
 
 ### Stdin -> tcp-server -> stdout with line buffering
 
 ```
-cryptocli --std -- \
-  tcp-server --listen :8080
+cryptocli -- \
+  -- stdin \
+  -- tcp-server \
+    --listen :8080 \
+  -- stdout
 ```
 
 ### tcp-server -> tcp-server: chain both tcp servers togethers
 
 ```
-cryptocli -- \
-  tcp-server --listen :8080 -- \
-  tcp-server --listen :8081
+cryptocli \
+  --multi-streams \
+  -- tcp-server --listen :8080 \
+  -- tcp-server --listen :8081
 ```
 
 ### http -> file: Get a webpage then uppercase ascii and send the result to a file
 
 ```
-cryptocli -- \
-  http --url https://google.com -- \
-  upper -- \
-  file --write --path /tmp/google.com --mode 0600
+cryptocli \
+  -- http --url https://google.com \
+  -- upper \
+  -- write-file \
+    --path /tmp/google.com \
+    --mode 0600
 ```
 
 ### tcp-server -> http: proxy tcp to http
 
 ```
-cryptocli -- \
-  tcp-server --listen :8081 -- \
-  http --url http://localhost:8080 --data
+cryptocli \
+  --multi-streams \
+  -- tcp-server \
+    --listen :8081 \
+  -- http \
+    --url http://localhost:8080
 ```
 
 ### tcp-server -> tcp --tls: tcp proxy to tls
 
 ```
-cryptocli \
+cryptocli 
+  --multi-streams \
   -- tcp-server \
     --listen :8080 \
   -- tcp \
@@ -105,19 +126,31 @@ curl \
 ### http -> ( tee -> dgst -> hex -> stdout ) , file
 
 ```
-cryptocli -- \
-  http --url https://google.com -- \
-  tee --pipe "dgst --algo sha256 -- hex --encode -- stdout" -- \
-  file --path /tmp/blih --write
+cryptocli \
+  -- http \
+    --url https://google.com \
+  -- tee \
+    --pipe "dgst --algo sha256 -- hex --encode -- stdout" \
+  -- file \
+    --path /tmp/blih \
+    --write
 ```
 
 ### stdin -> aes-gcm encrypt -> tcp-server -> aes-gcm decryt -> stdout: setup a tcp-server with aes-gcm encryption
 
 ```
-pwd=DEADBEEF ./cryptocli --std  -- \
-  aes-gcm --encrypt --password-in "env --var pwd" -- \
-  tcp-server --listen :8080 -- \
-  aes-gcm --decrypt --password-in "env --var pwd"
+pwd=DEADBEEF ./cryptocli \
+  --multi-streams \
+  -- stdin \
+  -- aes-gcm \
+    --encrypt \
+    --password-in "env --var pwd" \
+  -- tcp-server \
+    --listen :8080 \
+  -- aes-gcm \
+    --decrypt \
+    --password-in "env --var pwd" \
+  -- stdou
 ```
 
 ### stdin -> byte -> elasticsearch-put -> stdout: save each line in elasticsearch
@@ -140,7 +173,7 @@ cryptocli \
   -- stdin \
   -- byte \
     --delimiter $'\n'
-  -- elasticsearch-put \
+  -- write-elasticsearch \
     --index bluh \
     --server http://localhost:9200 \
     --raw \
@@ -151,7 +184,7 @@ cryptocli \
 
 ```
 cryptocli \
-  -- elasticsearch-get \
+  -- query-elasticsearch \
     --index beats \
     --server http://localhost:9201 \
     --query 'fields.type: "pv-logs-s3"' \
@@ -184,138 +217,69 @@ It will stop and show the help until there are no help flags remaining.
 
 ```
 Usage of ./src/cryptocli/cryptocli: [options] -- <module> [options] -- <module> [options] -- ...
-      --std   Read from stdin and writes to stdout instead of setting both modules
+      --max-concurrent-streams int   Max number of concurrent streams. Highier increase bandwidth at the cost of memory and CPU. (default 25)
+      --multi-streams                Enable multi streams modules. Warning, some modules might be blocked waiting for  input data that will never come
+      --std                          Read from stdin and writes to stdout instead of setting both modules
 List of all modules:
-  s3: Downloads or uploads a file from s3
-  websocket-server: Create an websocket webserver
-  elasticsearch-get: Query elasticsearch and output json on each line
-  stdin: Reads from stdin
-  tcp-server: Listens TCP and wait for a single connection to complete
+  env: Read an environment variable
+  http: Makes HTTP requests
+  read-s3: Read a file from s3
   tee: Create a new one way pipeline to copy the data over
-  unzip: Buffer the zip file to disk and read selected file patterns.
-  websocket: Connects to a websocket webserver
-  http-server: Create an http web webserver
-  dgst: Dgst decode or encode
-  gunzip: Gunzip de-compress
-  http: Connects to an HTTP webserver
-  aes-gcm: AES-GCM encryption/decryption
-  base64: Base64 decode or encode
-  fork: Start a program and attach stdin and stdout to the pipeline
-  gzip: Gzip compress
-  line: Produce messages per lines
+  lower: Lowercase all ascii characters
+  null: Discard all incoming data
   upper: Uppercase all ascii characters
   byte: Byte manipulation module
-  elasticsearch-put: Insert to elasticsearch from JSON
-  file: Reads from a file or write to a file.
-  null: Discard all incoming data
-  stdout: Writes to stdout
+  stdin: Reads from stdin
+  write-s3: uploads a file to s3
+  fork: Start a program and attach stdin and stdout to the pipeline
+  gzip: Gzip compress
+  http-server: Create an http web webserver
+  read-file: Read file from filesystem
   tcp: Connects to TCP
-  env: Read an environment variable
-  hex: Hex de-compress
-  lower: Lowercase all ascii characters
+  aes-gcm: AES-GCM encryption/decryption
+  query-elasticsearch: Send query to elasticsearch cluster and output result in json line
+  stdout: Writes to stdout
+  websocket: Connect using the websocket protocol
+  write-file: Writes to a file.
+  gunzip: Gunzip de-compress
+  base64: Base64 decode or encode
+  tcp-server: Listens TCP and wait for a single connection to complete
+  unzip: Buffer the zip file to disk and read selected file patterns.
+  dgst: Dgst decode or encode
+  hex: Hex encoding/decoding
+  websocket-server: Create an http websocket server
+  write-elasticsearch: Insert to elasticsearch from JSON
 ```
 
 ### Modules
 
 ```
-Usage of module "s3":
+Usage of module "env":
+      --var string   Variable to read from
+```
+```
+Usage of module "http":
+      --data                    Read data from the stream and send it before reading the response
+      --header stringArray      Set header in the form of "header: value"
+      --insecure                Don't verify the tls certificate chain
+      --method string           HTTP Verb (default "GET")
+      --read-timeout duration   Read timeout for the tcp connection (default 15s)
+      --url string              HTTP server to connect to
+```
+```
+Usage of module "read-s3":
       --bucket string   Specify the bucket name
       --path string     Object path
-      --read            Read from s3
-      --write           Write to s3
-```
-```
-Usage of module "websocket-server":
-      --addr string                Listen on an address
-      --close-timeout duration     Duration to wait to read the close message (default 5s)
-      --connect-timeout duration   Duration to wait for a websocket connection (default 15s)
-```
-```
-Usage of module "elasticsearch-get":
-      --aggregation string       Elastic Aggregation query
-      --asc                      Sort by asc
-      --count-only               Only displays the match number
-      --from string              Elasticsearch date for gte (default "now-15m")
-      --index string             Specify the elasticsearch index to query
-      --query string             Elasticsearch query string query (default "*")
-      --scroll-size int          Document to return between each scroll (default 500)
-      --server string            Specify elasticsearch server to query (default "http://localhost:9200")
-      --size int                 Overall number of results to display, does not change the scroll size
-      --sort string              Sort field (default "@timestamp")
-      --sort-field stringArray   Additional fields to sort on
-      --tail                     Query Elasticsearch in tail -f style. Deactivate the flag "--to"
-      --timestamp-field string   Timestamp field (default "@timestamp")
-      --to string                Elasticsearch date for lt. Has not effect when "--tail" is used (default "now")
-      --version int              Set the elasticsearch library version (default 5)
-```
-```
-Usage of module "stdin":
-```
-```
-Usage of module "tcp-server":
-      --certificate string         Path to certificate in PEM format
-      --connect-timeout duration   Max amount of time to wait for a potential connection when pipeline is closing (default 30s)
-      --key string                 Path to private key in PEM format
-      --listen string              Listen on addr:port. If port is 0, random port will be assigned
 ```
 ```
 Usage of module "tee":
       --pipe string   Pipeline definition
 ```
 ```
-Usage of module "unzip":
-      --pattern stringArray   Read the file each time it matches a pattern. (default [.*])
+Usage of module "lower":
 ```
 ```
-Usage of module "websocket":
-      --binary                   Set the websocket message's metadata to binary
-      --close-timeout duration   Duration to wait to read the close message (default 5s)
-      --header stringArray       Send HTTP Headers
-      --insecure                 Don't valid the TLS certificate chain
-      --url string               HTTP url to query
-```
-```
-Usage of module "http-server":
-      --addr string                Listen on an address
-      --connect-timeout duration   Max amount of time to wait for a potential connection when pipeline is closing (default 30s)
-```
-```
-Usage of module "dgst":
-      --algo string   Hash algorithm to use: md5, sha1, sha256, sha512, sha3_224, sha3_256, sha3_384, sha3_512, blake2s_256, blake2b_256, blake2b_384, blake2b_512, ripemd160
-```
-```
-Usage of module "gunzip":
-```
-```
-Usage of module "http":
-      --data-timeout duration   Wait before closing the input pipeline (default 5s)
-      --header stringArray      Send HTTP Headers
-      --insecure                Don't valid the TLS certificate chain
-      --method string           Set the method to query (default "GET")
-      --url string              HTTP url to query
-```
-```
-Usage of module "aes-gcm":
-      --128                  128 bits key (default true)
-      --256                  256 bits key
-      --decrypt              Decrypt
-      --encrypt              Encrypt
-      --password-in string   Pipeline definition to set the password
-```
-```
-Usage of module "base64":
-      --decode   Base64 decode
-      --encode   Base64 encode
-```
-```
-Usage of module "fork":
-```
-```
-Usage of module "gzip":
-```
-```
-Usage of module "line":
-      --new-line   Append a new line to each message
+Usage of module "null":
 ```
 ```
 Usage of module "upper":
@@ -330,39 +294,108 @@ Usage of module "byte":
       --skip-messages int   Skip x messages after splitting
 ```
 ```
-Usage of module "elasticsearch-put":
-      --bulk-actions int          Max bulk actions when indexing (default 500)
-      --bulk-size int             Max bulk size in bytes when indexing (default 10485760)
-      --create                    Fail if the document ID already exists
-      --flush-interval duration   Max interval duration between two bulk requests (default 5s)
-      --index string              Default index to write to. Uses "_index" if found in input
-      --raw                       Use the json as the _source directly, automatically generating ids. Expects "--index" and "--type" to be present
-      --server string             Specify elasticsearch server to query (default "http://localhost:9200")
-      --version int               Set the elasticsearch library version (default 5)
+Usage of module "stdin":
 ```
 ```
-Usage of module "file":
-      --append        Append data instead of truncating when writting
-      --mode uint32   Set file's mode if created when writting (default 416)
+Usage of module "write-s3":
+      --bucket string   Specify the bucket name
+      --path string     Object path
+```
+```
+Usage of module "fork":
+```
+```
+Usage of module "gzip":
+```
+```
+Usage of module "http-server":
+      --addr string                     Listen on an address
+      --connect-timeout duration        Max amount of time to wait for a potential connection when pipeline is closing (default 30s)
+      --iddle-timeout duration          IdleTimeout is the maximum amount of time to wait for the next request when keep-alives are enabled (default 5s)
+      --read-headers-timeout duration   Set the amount of time allowed to read request headers. (default 15s)
+      --read-timeout duration           Set the maximum duration for reading the entire request, including the body. (default 15s)
+      --write-timeout duration          Set maximum duration before timing out writes of the response (default 15s)
+```
+```
+Usage of module "read-file":
       --path string   File's path
-      --read          Read from a file
-      --write         Write to a file
 ```
 ```
-Usage of module "null":
+Usage of module "tcp":
+      --addr string             Tcp address to connect to
+      --insecure                Don't verify certificate chain when "--servername" is set
+      --read-timeout duration   Read timeout for the tcp connection (default 3s)
+      --tls string              Use TLS with servername in client hello
+```
+```
+Usage of module "aes-gcm":
+      --128                  128 bits key (default true)
+      --256                  256 bits key
+      --decrypt              Decrypt
+      --encrypt              Encrypt
+      --password-in string   Pipeline definition to set the password
+```
+```
+Usage of module "query-elasticsearch":
+      --aggregation string       Elastic Aggregation query
+      --asc                      Sort by asc
+      --count-only               Only displays the match number
+      --from string              Elasticsearch date for gte (default "now-15m")
+      --index string             Specify the elasticsearch index to query
+      --query string             Elasticsearch query string query (default "*")
+      --scroll-size int          Document to return between each scroll (default 500)
+      --server string            Specify elasticsearch server to query (default "http://localhost:9200")
+      --size int                 Overall number of results to display, does not change the scroll size
+      --sort string              Sort field (default "@timestamp")
+      --sort-field stringArray   Additional fields to sort on
+      --tail                     Query Elasticsearch in tail -f style. Deactivate the flag "--to"
+      --tail-interval duration   Time to wait before querying elasticsearch again when using "--tail" (default 1s)
+      --tail-max duration        Maximum time to wait before exiting the "--tail" loop (default 2562047h47m16.854775807s)
+      --timestamp-field string   Timestamp field (default "@timestamp")
+      --to string                Elasticsearch date for lt. Has not effect when "--tail" is used (default "now")
 ```
 ```
 Usage of module "stdout":
 ```
 ```
-Usage of module "tcp":
-      --addr string   Tcp address to connect to
-      --insecure      Don't verify certificate chain when "--tls" is set
-      --tls string    Use TLS with servername in client hello
+Usage of module "websocket":
+      --close-timeout duration   Timeout to wait for after sending the closure message (default 15s)
+      --header stringArray       Set header in the form of "header: value"
+      --insecure                 Don't verify the tls certificate chain
+      --ping-interval duration   Interval of time between ping websocket messages (default 30s)
+      --read-timeout duration    Read timeout for the websocket connection (default 15s)
+      --text                     Set the websocket message's metadata to text
+      --url string               Websocket server to connect to
 ```
 ```
-Usage of module "env":
-      --var string   Variable to read from
+Usage of module "write-file":
+      --append        Append data instead of truncating when writting
+      --mode uint32   Set file's mode if created when writting (default 416)
+      --path string   File's path
+```
+```
+Usage of module "gunzip":
+```
+```
+Usage of module "base64":
+      --decode   Base64 decode
+      --encode   Base64 encode
+```
+```
+Usage of module "tcp-server":
+      --certificate string         Path to certificate in PEM format
+      --connect-timeout duration   Max amount of time to wait for a potential connection when pipeline is closing (default 30s)
+      --key string                 Path to private key in PEM format
+      --listen string              Listen on addr:port. If port is 0, random port will be assigned
+      --read-timeout duration      Amout of time to wait reading from the connection (default 15s)
+```
+```
+Usage of module "unzip":
+      --pattern stringArray   Read the file each time it matches a pattern. (default [.*])
+```
+```
+Usage of module "dgst":
+      --algo string   Hash algorithm to use: md5, sha1, sha256, sha512, sha3_224, sha3_256, sha3_384, sha3_512, blake2s_256, blake2b_256, blake2b_384, blake2b_512, ripemd160
 ```
 ```
 Usage of module "hex":
@@ -370,7 +403,23 @@ Usage of module "hex":
       --encode   Hexadecimal encode
 ```
 ```
-Usage of module "lower":
+Usage of module "websocket-server":
+      --addr string                     Listen on an address
+      --close-timeout duration          Timeout to wait for after sending the closure message (default 15s)
+      --connect-timeout duration        Max amount of time to wait for a potential connection when pipeline is closing (default 30s)
+      --read-headers-timeout duration   Set the amount of time allowed to read request headers. (default 15s)
+      --read-timeout duration           Read timeout for the websocket connection (default 15s)
+      --text                            Set the websocket message's metadata to text
+```
+```
+Usage of module "write-elasticsearch":
+      --bulk-actions int          Max bulk actions when indexing (default 500)
+      --bulk-size int             Max bulk size in bytes when indexing (default 10485760)
+      --create                    Fail if the document ID already exists
+      --flush-interval duration   Max interval duration between two bulk requests (default 5s)
+      --index string              Default index to write to. Uses "_index" if found in input
+      --raw                       Use the json as the _source directly, automatically generating ids. Expects "--index" to be present
+      --server string             Specify elasticsearch server to query (default "http://localhost:9200")
 ```
 
 ## Design
@@ -430,17 +479,3 @@ Let's grab `tcp-server` for example. It listens on a `addr:port`, then accepts c
     |                |
     +----------------+
 ```
-
-## TODO:
-
-List of modules:
-
-  * aes
-  * count bytes
-  * pem
-  * http serve file
-
-Feature ideas:
-
-  * tags
-  * add raw tty signal for stdin when tty

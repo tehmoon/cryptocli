@@ -11,84 +11,65 @@ func init() {
 	MODULELIST.Register("gzip", "Gzip compress", NewGzip)
 }
 
-type Gzip struct {
-	in chan *Message
-	out chan *Message
-	wg *sync.WaitGroup
-}
+type Gzip struct {}
 
-func (m Gzip) Init(global *GlobalFlags) (error) {
+func (m Gzip) Init(in, out chan *Message, global *GlobalFlags) (error) {
+	go func(in, out chan *Message) {
+		wg := &sync.WaitGroup{}
+
+		LOOP: for message := range in {
+			switch message.Type {
+				case MessageTypeTerminate:
+					wg.Wait()
+					out <- message
+					break LOOP
+				case MessageTypeChannel:
+					inc, ok := message.Interface.(MessageChannel)
+					if ok {
+						outc := make(MessageChannel)
+
+						out <- &Message{
+							Type: MessageTypeChannel,
+							Interface: outc,
+						}
+						wg.Add(1)
+						go func() {
+							buff := bytes.NewBuffer(nil)
+							gzipWriter := gzip.NewWriter(buff)
+
+							go func() {
+								for payload := range inc {
+									_, err := gzipWriter.Write(payload)
+									if err != nil {
+										break
+									}
+
+									gzipWriter.Flush()
+
+									outc <- CopyResetBuffer(buff)
+								}
+
+								close(outc)
+								DrainChannel(inc, nil)
+								wg.Done()
+							}()
+						}()
+					}
+
+			}
+		}
+
+		wg.Wait()
+		// Last message will signal the closing of the channel
+		<- in
+		close(out)
+	}(in, out)
+
 	return nil
 }
 
-func (m Gzip) Start() {
-	m.wg.Add(1)
-
-	go startGzip(m.in, m.out, m.wg)
-}
-
-func (m Gzip) Wait() {
-	m.wg.Wait()
-
-	for range m.in {}
-}
-
-func (m *Gzip) In(in chan *Message) (chan *Message) {
-	m.in = in
-
-	return in
-}
-
-func (m *Gzip) Out(out chan *Message) (chan *Message) {
-	m.out = out
-
-	return out
-}
-
 func NewGzip() (Module) {
-	return &Gzip{
-		wg: &sync.WaitGroup{},
-	}
+	return &Gzip{}
 }
 
-func startGzipIn(in chan *Message, writer *gzip.Writer, buff *bytes.Buffer, c chan []byte, wg *sync.WaitGroup) {
-	for message := range in {
-		_, err := writer.Write(message.Payload)
-		if err != nil {
-			break
-		}
-
-		writer.Flush()
-
-		c <- CopyResetBuffer(buff)
-	}
-
-	writer.Close()
-	c <- CopyResetBuffer(buff)
-	close(c)
-	wg.Done()
-}
-
-func startGzipOut(out chan *Message, c chan []byte, wg *sync.WaitGroup) {
-	for payload := range c {
-		SendMessage(payload, out)
-	}
-
-	close(out)
-	wg.Done()
-}
-
-func startGzip(in, out chan *Message, wg *sync.WaitGroup) {
-	buff := bytes.NewBuffer(nil)
-	gzipWriter := gzip.NewWriter(buff)
-	c := make(chan []byte, 0)
-
-	wg.Add(2)
-
-	go startGzipIn(in, gzipWriter, buff, c, wg)
-	go startGzipOut(out, c, wg)
-
-	wg.Done()
-}
-
-func (m *Gzip) SetFlagSet(fs *pflag.FlagSet) {}
+func (m *Gzip) SetFlagSet(fs *pflag.FlagSet, args []string) {}

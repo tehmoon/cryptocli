@@ -1,6 +1,7 @@
 package main
 
 import (
+	"sync"
 	"github.com/spf13/pflag"
 	"io"
 	"log"
@@ -15,8 +16,6 @@ func init() {
 }
 
 type Byte struct {
-	in chan *Message
-	out chan *Message
 	messageSize int
 	skipMessages int
 	maxMessages int
@@ -26,7 +25,7 @@ type Byte struct {
 	append string
 }
 
-func (m *Byte) Init(global *GlobalFlags) (err error) {
+func (m *Byte) Init(in, out chan *Message, global *GlobalFlags) (err error) {
 	if m.messageSize < 0 {
 		return errors.Errorf("Flag %q cannot be lower than 0", "message-size")
 	}
@@ -43,6 +42,36 @@ func (m *Byte) Init(global *GlobalFlags) (err error) {
 	if err != nil {
 		return errors.Wrapf(err, "Error parsing flag %q", "delimiter")
 	}
+
+	go func(in, out chan *Message) {
+		wg := &sync.WaitGroup{}
+
+		LOOP: for message := range in {
+			switch message.Type {
+				case MessageTypeTerminate:
+					wg.Wait()
+					out <- message
+					break LOOP
+				case MessageTypeChannel:
+					inc, ok := message.Interface.(MessageChannel)
+					if ok {
+						outc := make(MessageChannel)
+
+						out <- &Message{
+							Type: MessageTypeChannel,
+							Interface: outc,
+						}
+						wg.Add(1)
+						go startByteHandler(m, inc, outc, wg)
+					}
+			}
+		}
+
+		wg.Wait()
+		// Last message will signal the closing of the channel
+		<- in
+		close(out)
+	}(in, out)
 
 	return nil
 }
@@ -112,75 +141,59 @@ var ByteReaderCallbackDelim = func(reader io.Reader, delim *regexp.Regexp) (Byte
 	}
 }
 
-func (m Byte) Start() {
-	go func() {
-		reader := NewMessageReader(m.in)
+func startByteHandler(m *Byte, inc, outc MessageChannel, wg *sync.WaitGroup) {
+	defer wg.Done()
+	defer DrainChannel(inc, nil)
+	defer close(outc)
 
-		var cb ByteReaderCallback
+	reader := NewMessageReader(inc)
 
-		if m.delimFlag != "" {
-			cb = ByteReaderCallbackDelim(reader, m.delimiter)
-		} else {
-			cb = ByteReaderCallbackFull(reader, m.messageSize)
+	var cb ByteReaderCallback
+
+	if m.delimFlag != "" {
+		cb = ByteReaderCallbackDelim(reader, m.delimiter)
+	} else {
+		cb = ByteReaderCallbackFull(reader, m.messageSize)
+	}
+
+	skipped := 0
+	count := 0
+
+	for {
+		payload, err := cb()
+		if err != nil {
+			err = errors.Wrapf(err, "Err reading from byte reader")
+			log.Println(err.Error())
+			break
 		}
-
-		skipped := 0
-		count := 0
-
-		for {
-			payload, err := cb()
-			if payload != nil {
-				if m.skipMessages > 0 && skipped < m.skipMessages {
-					skipped++
-					continue
-				}
-
-				if m.maxMessages > 0 && count >= m.maxMessages {
-					break
-				}
-
-				if len(payload) > 0 {
-					log.Println(string(payload[:]))
-					payload = append([]byte(m.prepend), payload...)
-					payload = append(payload, []byte(m.append)...)
-
-					SendMessage(payload, m.out)
-				}
-
-				count++
+		if payload != nil {
+			log.Printf("skipped: %d skipmessages: %d maxMessages: %d count: %d len: %d\n", skipped, m.skipMessages, m.maxMessages, count, len(payload))
+			if m.skipMessages > 0 && skipped < m.skipMessages - 1 {
+				skipped++
+				continue
 			}
-			if err != nil {
-				err = errors.Wrapf(err, "Err reading from byte reader")
-				log.Println(err.Error())
+
+			if m.maxMessages > 0 && count >= m.maxMessages {
 				break
 			}
+
+			if len(payload) > 0 {
+				payload = append([]byte(m.prepend), payload...)
+				payload = append(payload, []byte(m.append)...)
+
+				outc <- payload
+			}
+
+			count++
 		}
-
-		close(m.out)
-	}()
-}
-
-func (m Byte) Wait() {
-	for range m.in {}
-}
-
-func (m *Byte) In(in chan *Message) (chan *Message) {
-	m.in = in
-
-	return in
-}
-
-func (m *Byte) Out(out chan *Message) (chan *Message) {
-	m.out = out
-
-	return out
+	}
 }
 
 func NewByte() (Module) {
 	return &Byte{}
 }
 
-func (m *Byte) SetFlagSet(fs *pflag.FlagSet) {
+func (m *Byte) SetFlagSet(fs *pflag.FlagSet, args []string) {
 	fs.IntVar(&m.messageSize, "message-size", 2<<13, "Split stream into messages of byte length. Mutually exclusive with \"--delimiter\"")
 	fs.StringVar(&m.delimFlag, "delimiter", "", "Split stream into messages delimited by specified by the regexp delimiter. Mutually exclusive with \"--message-size\"")
 	fs.IntVar(&m.skipMessages, "skip-messages", 0, "Skip x messages after splitting")

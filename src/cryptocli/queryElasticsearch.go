@@ -14,45 +14,12 @@ import (
 )
 
 func init() {
-	MODULELIST.Register("elasticsearch-get", "Query elasticsearch and output json on each line", NewElasticsearchGet)
+	MODULELIST.Register("query-elasticsearch", "Send query to elasticsearch cluster and output result in json line", NewQueryElasticsearch)
 }
 
-type ElasticsearchGet struct {
-	in chan *Message
-	out chan *Message
-	sync *sync.WaitGroup
-	fs *pflag.FlagSet
-	client *elastic.Client
-	stdin io.WriteCloser
-	stdout io.ReadCloser
-	flags *ElasticsearchGetFlags
+func (m *QueryElasticsearch) SetFlagSet(fs *pflag.FlagSet, args []string) {
+	m.flags = &QueryElasticsearchFlags{}
 
-	// Set to true only once by only one goroutine if querying needs to stop 
-	close bool
-}
-
-type ElasticsearchGetFlags struct {
-	Version int
-	QueryStringQuery string
-	Server string
-	Index string
-	From string
-	To string
-	Size int
-	Asc bool
-	CountOnly bool
-	Sort string
-	ScrollSize int
-	TimestampField string
-	Aggregation string
-	Tail bool
-	SortFields []string
-}
-
-func (m *ElasticsearchGet) SetFlagSet(fs *pflag.FlagSet) {
-	m.flags = &ElasticsearchGetFlags{}
-
-	fs.IntVar(&m.flags.Version, "version", 5, "Set the elasticsearch library version")
 	fs.StringVar(&m.flags.From, "from", "now-15m", "Elasticsearch date for gte")
 	fs.StringVar(&m.flags.To, "to", "now", "Elasticsearch date for lt. Has not effect when \"--tail\" is used")
 	fs.BoolVar(&m.flags.Asc, "asc", false, "Sort by asc")
@@ -67,21 +34,15 @@ func (m *ElasticsearchGet) SetFlagSet(fs *pflag.FlagSet) {
 	fs.StringVar(&m.flags.Aggregation, "aggregation", "", "Elastic Aggregation query")
 	fs.BoolVar(&m.flags.Tail, "tail", false, "Query Elasticsearch in tail -f style. Deactivate the flag \"--to\"")
 	fs.StringArrayVar(&m.flags.SortFields, "sort-field", make([]string, 0), "Additional fields to sort on")
+	fs.DurationVar(&m.flags.TailInterval, "tail-interval", time.Second, "Time to wait before querying elasticsearch again when using \"--tail\"")
+	fs.DurationVar(&m.flags.TailMax, "tail-max", time.Duration((1 << 63) - 1), "Maximum time to wait before exiting the \"--tail\" loop")
 }
 
-func (m *ElasticsearchGet) In(in chan *Message) (chan *Message) {
-	m.in = in
+func (m *QueryElasticsearch) Init(in, out chan *Message, global *GlobalFlags) (err error) {
+	if m.flags.TailInterval < 1 {
+		return errors.Errorf("Flag %q cannot be lower than 1", "--tail-interval")
+	}
 
-	return in
-}
-
-func (m *ElasticsearchGet) Out(out chan *Message) (chan *Message) {
-	m.out = out
-
-	return out
-}
-
-func (m *ElasticsearchGet) Init(global *GlobalFlags) (error) {
 	if m.flags.Index == "" {
 		return errors.Errorf("Flag %q is required", "--index")
 	}
@@ -112,23 +73,123 @@ func (m *ElasticsearchGet) Init(global *GlobalFlags) (error) {
 
 	setURL := elastic.SetURL(m.flags.Server)
 
-	var err error
-
-	switch version := m.flags.Version; version {
-		case 5:
-			m.client, err = elastic.NewClient(setURL, elastic.SetSniff(false))
-			if err != nil {
-				return errors.Wrapf(err, "Err creating connection to server %s", m.flags.Server)
-			}
-		default:
-			return errors.Errorf("Version %d is not supported", version)
+	m.client, err = elastic.NewClient(setURL, elastic.SetSniff(false))
+	if err != nil {
+		return errors.Wrapf(err, "Err creating connection to server %s", m.flags.Server)
 	}
 
+	go func(m *QueryElasticsearch, in, out chan *Message) {
+		wg := &sync.WaitGroup{}
+		ctx, cancel := context.WithCancel(context.Background())
+		outc := make(MessageChannel)
+
+		out <- &Message{
+			Type: MessageTypeChannel,
+			Interface: outc,
+		}
+
+		LOOP: for message := range in {
+			switch message.Type {
+				case MessageTypeTerminate:
+					wg.Wait()
+					cancel()
+					out <- message
+					break LOOP
+				case MessageTypeChannel:
+					inc, ok := message.Interface.(MessageChannel)
+					if ok {
+						wg.Add(2)
+						go DrainChannel(inc, wg)
+						go func(m *QueryElasticsearch, outc MessageChannel, wg *sync.WaitGroup, ctx context.Context) {
+							defer wg.Done()
+							defer close(outc)
+
+							args := &QueryElasticsearchFuncArgs{
+								Client: m.client,
+								Flags: m.flags,
+								BoolQuery: QueryElasticsearchGenerateBoolQuery(m.flags, true),
+							}
+
+							ts, err := QueryElasticsearchDo(args, outc, ctx)
+							if err != nil {
+								log.Println(err.Error())
+								return
+							}
+
+							if args.Flags.Tail {
+								ctx, cancel = context.WithTimeout(ctx, m.flags.TailMax)
+								defer cancel()
+
+								timer := time.NewTimer(m.flags.TailInterval)
+								timer.Stop()
+
+								for {
+									args.Flags.From = ts
+									args.BoolQuery = QueryElasticsearchGenerateBoolQuery(m.flags, false)
+
+									timer.Reset(m.flags.TailInterval)
+									select {
+										case <- timer.C:
+										case <- ctx.Done():
+											log.Println("Timeout exceeded")
+											timer.Stop()
+											return
+									}
+
+									ts, err = QueryElasticsearchDo(args, outc, ctx)
+									if err != nil {
+										log.Println(err.Error())
+										return
+									}
+								}
+							}
+						}(m, outc, wg, ctx)
+						out <- &Message{
+							Type: MessageTypeTerminate,
+						}
+						break LOOP
+					}
+
+			}
+		}
+
+		wg.Wait()
+		cancel()
+		// Last message will signal the closing of the channel
+		<- in
+		close(out)
+	}(m, in, out)
 
 	return nil
 }
 
-func ElasticsearchGetGenerateBoolQuery(flags *ElasticsearchGetFlags, gte bool) (bq *elastic.BoolQuery) {
+type QueryElasticsearch struct {
+	fs *pflag.FlagSet
+	client *elastic.Client
+	flags *QueryElasticsearchFlags
+}
+
+type QueryElasticsearchFlags struct {
+	Version int
+	QueryStringQuery string
+	Server string
+	Index string
+	From string
+	To string
+	Size int
+	Asc bool
+	CountOnly bool
+	Sort string
+	ScrollSize int
+	TimestampField string
+	Aggregation string
+	Tail bool
+	SortFields []string
+	TailInterval time.Duration
+	TailMax time.Duration
+}
+
+func QueryElasticsearchGenerateBoolQuery(flags *QueryElasticsearchFlags, gte bool) (bq *elastic.BoolQuery) {
 		qs := elastic.NewQueryStringQuery(flags.QueryStringQuery)
 		rq := elastic.NewRangeQuery(flags.TimestampField)
 
@@ -145,9 +206,9 @@ func ElasticsearchGetGenerateBoolQuery(flags *ElasticsearchGetFlags, gte bool) (
 		return elastic.NewBoolQuery().Must(qs, rq)
 }
 
-func ElasticsearchGetDo(args *ElasticsearchGetFuncArgs, out chan *Message, close *bool) (ts string, err error) {
+func QueryElasticsearchDo(args *QueryElasticsearchFuncArgs, outc MessageChannel, ctx context.Context) (ts string, err error) {
 	if args.Flags.Aggregation == "" {
-		ts, err = ElasticsearchGetDoSearch(args, out, close)
+		ts, err = QueryElasticsearchDoSearch(args, outc, ctx)
 		if err != nil {
 			return ts, errors.Wrap(err, "Error in search")
 		}
@@ -155,7 +216,7 @@ func ElasticsearchGetDo(args *ElasticsearchGetFuncArgs, out chan *Message, close
 		return ts, nil
 	}
 
-	ts, err = ElasticsearchGetDoAggregation(args, out)
+	ts, err = QueryElasticsearchDoAggregation(args, outc, ctx)
 	if err != nil {
 		return ts, errors.Wrap(err, "Error in aggregation")
 	}
@@ -163,50 +224,7 @@ func ElasticsearchGetDo(args *ElasticsearchGetFuncArgs, out chan *Message, close
 	return ts, nil
 }
 
-func (m *ElasticsearchGet) Start() {
-	go func() {
-		defer close(m.out)
-
-		args := &ElasticsearchGetFuncArgs{
-			Client: m.client,
-			Flags: m.flags,
-			BoolQuery: ElasticsearchGetGenerateBoolQuery(m.flags, true),
-		}
-
-		ts, err := ElasticsearchGetDo(args, m.out, &m.close)
-		if err != nil {
-			log.Println(err.Error())
-			return
-		}
-
-		if args.Flags.Tail {
-			for {
-				if m.close {
-					return
-				}
-
-				args.Flags.From = ts
-				args.BoolQuery = ElasticsearchGetGenerateBoolQuery(m.flags, false)
-
-				// TODO: create variable
-				time.Sleep(time.Second * 5)
-
-				ts, err = ElasticsearchGetDo(args, m.out, &m.close)
-				if err != nil {
-					log.Println(err.Error())
-					return
-				}
-			}
-		}
-	}()
-
-	go func() {
-		for range m.in {}
-		m.close = true
-	}()
-}
-
-func ElasticsearchGetParseTimestamp(field string, hits []*elastic.SearchHit, asc bool) (ts string) {
+func QueryElasticsearchParseTimestamp(field string, hits []*elastic.SearchHit, asc bool) (ts string) {
 	pos := 0
 	if asc {
 		pos = len(hits) - 1
@@ -218,7 +236,8 @@ func ElasticsearchGetParseTimestamp(field string, hits []*elastic.SearchHit, asc
 
 	err := json.Unmarshal(payload, &hit)
 	if err != nil {
-		log.Println(errors.Wrap(err, "Un-expected unable to unmarshal source to json"))
+		err = errors.Wrap(err, "Un-expected unable to unmarshal source to json")
+		log.Println(err.Error())
 		return ""
 	}
 
@@ -231,8 +250,7 @@ func ElasticsearchGetParseTimestamp(field string, hits []*elastic.SearchHit, asc
 	return ""
 }
 
-
-func ElasticsearchGetDoSearch(args *ElasticsearchGetFuncArgs, out chan *Message, close *bool) (ts string, err error) {
+func QueryElasticsearchDoSearch(args *QueryElasticsearchFuncArgs, outc MessageChannel, ctx context.Context) (ts string, err error) {
 	ts = args.Flags.From
 
 	scroll := args.Client.Scroll(args.Flags.Index).
@@ -245,7 +263,7 @@ func ElasticsearchGetDoSearch(args *ElasticsearchGetFuncArgs, out chan *Message,
 		scroll.Sort(field, args.Flags.Asc)
 	}
 
-	res, err := scroll.Do(context.Background())
+	res, err := scroll.Do(ctx)
 	if err != nil {
 		if err != io.EOF {
 			return ts, errors.Wrap(err, "Err querying elasticsearch")
@@ -254,23 +272,23 @@ func ElasticsearchGetDoSearch(args *ElasticsearchGetFuncArgs, out chan *Message,
 
 	if res == nil || res.TotalHits() == 0 {
 		if args.Flags.CountOnly {
-			SendMessageLine([]byte("0"), out)
+			outc <- []byte("0\n")
 		}
 
 		return ts, nil
 	}
 
 	scrollId := res.ScrollId
-	defer ElasticsearchGetClearScroll(args.Client, scrollId)
+	defer QueryElasticsearchClearScroll(args.Client, scrollId)
 
-	ts = ElasticsearchGetParseTimestamp(args.Flags.TimestampField, res.Hits.Hits, args.Flags.Asc)
+	ts = QueryElasticsearchParseTimestamp(args.Flags.TimestampField, res.Hits.Hits, args.Flags.Asc)
 
 	if args.Flags.CountOnly {
 		var totalHits int64 = 0
 
 		totalHits = res.TotalHits()
 
-		SendMessageLine([]byte(strconv.FormatInt(totalHits, 10)), out)
+		outc <- append([]byte(strconv.FormatInt(totalHits, 10)), '\n')
 
 		return ts, nil
 	}
@@ -278,8 +296,6 @@ func ElasticsearchGetDoSearch(args *ElasticsearchGetFuncArgs, out chan *Message,
 	counter := 0
 
 	for i := 0; (counter != args.Flags.Size || counter == 0); i++ {
-		if *close { return ts, nil }
-
 		if i == len(res.Hits.Hits) {
 			break
 		}
@@ -289,7 +305,7 @@ func ElasticsearchGetDoSearch(args *ElasticsearchGetFuncArgs, out chan *Message,
 			return ts, errors.Wrap(err, "Un-excepted error marshaling hit")
 		}
 
-		SendMessageLine(payload, out)
+		outc <- payload
 
 		counter++
 	}
@@ -299,13 +315,11 @@ func ElasticsearchGetDoSearch(args *ElasticsearchGetFuncArgs, out chan *Message,
 	}
 
 	LOOP: for {
-		if *close { return ts, nil }
-
 		res, err := args.Client.Scroll(args.Flags.Index).
 			Query(args.BoolQuery).
 			Scroll("15s").
 			ScrollId(scrollId).
-			Do(context.Background())
+			Do(ctx)
 		if err != nil {
 			if err == io.EOF {
 				break LOOP
@@ -315,12 +329,10 @@ func ElasticsearchGetDoSearch(args *ElasticsearchGetFuncArgs, out chan *Message,
 		}
 
 		if args.Flags.Asc {
-			ts = ElasticsearchGetParseTimestamp(args.Flags.TimestampField, res.Hits.Hits, args.Flags.Asc)
+			ts = QueryElasticsearchParseTimestamp(args.Flags.TimestampField, res.Hits.Hits, args.Flags.Asc)
 		}
 
 		for i := 0; (counter != args.Flags.Size || counter == 0); i++ {
-			if *close { return ts, nil }
-
 			if i == len(res.Hits.Hits) {
 				break
 			}
@@ -330,7 +342,7 @@ func ElasticsearchGetDoSearch(args *ElasticsearchGetFuncArgs, out chan *Message,
 				return ts, errors.Wrap(err, "Un-excepted error marshaling hit")
 			}
 
-			SendMessageLine(payload, out)
+			outc <- payload
 
 			counter++
 		}
@@ -345,7 +357,7 @@ func ElasticsearchGetDoSearch(args *ElasticsearchGetFuncArgs, out chan *Message,
 	return ts, nil
 }
 
-func ElasticsearchGetClearScroll(client *elastic.Client, id string) (err error) {
+func QueryElasticsearchClearScroll(client *elastic.Client, id string) (err error) {
 	_, err = client.ClearScroll(id).
 		Do(context.Background())
 	if err != nil {
@@ -355,37 +367,27 @@ func ElasticsearchGetClearScroll(client *elastic.Client, id string) (err error) 
 	return nil
 }
 
-type ElasticsearchGetFuncArgs struct {
+type QueryElasticsearchFuncArgs struct {
 	Client *elastic.Client
-	Flags *ElasticsearchGetFlags
+	Flags *QueryElasticsearchFlags
 	BoolQuery *elastic.BoolQuery
 }
 
-func (m *ElasticsearchGet) Wait() {
-	for range m.in {}
-
-	// This will trigger to stop next query loop
+func NewQueryElasticsearch() (Module) {
+	return &QueryElasticsearch{}
 }
 
-func NewElasticsearchGet() (Module) {
-	return &ElasticsearchGet{
-		sync: &sync.WaitGroup{},
-		close: false,
-	}
-}
-
-type ElasticsearchGetStringAggregation struct{
+type QueryElasticsearchStringAggregation struct{
 	body string
 }
 
-func (a ElasticsearchGetStringAggregation) Source() (v interface{}, err error) {
+func (a QueryElasticsearchStringAggregation) Source() (v interface{}, err error) {
 	err = json.Unmarshal([]byte(a.body), &v)
 
 	return v, err
 }
-
-func ElasticsearchGetDoAggregation(args *ElasticsearchGetFuncArgs, out chan *Message) (ts string, err error) {
-	aggregation := &ElasticsearchGetStringAggregation{
+func QueryElasticsearchDoAggregation(args *QueryElasticsearchFuncArgs, outc MessageChannel, ctx context.Context) (ts string, err error) {
+	aggregation := &QueryElasticsearchStringAggregation{
 		body: args.Flags.Aggregation,
 	}
 
@@ -396,7 +398,7 @@ func ElasticsearchGetDoAggregation(args *ElasticsearchGetFuncArgs, out chan *Mes
 		Size(1).
 		Sort(args.Flags.Sort, false).
 		Aggregation("root", aggregation).
-		Do(context.Background())
+		Do(ctx)
 	if err != nil {
 		if err != io.EOF {
 			return ts, errors.Wrap(err, "Err querying elasticsearch")
@@ -405,19 +407,19 @@ func ElasticsearchGetDoAggregation(args *ElasticsearchGetFuncArgs, out chan *Mes
 
 	if res == nil {
 		if args.Flags.CountOnly {
-			SendMessageLine([]byte("0"), out)
+			outc <- []byte("0\n")
 		}
 
 		return ts, nil
 	}
 
 	if len(res.Hits.Hits) == 1 {
-		ts = ElasticsearchGetParseTimestamp(args.Flags.TimestampField, res.Hits.Hits, args.Flags.Asc)
+		ts = QueryElasticsearchParseTimestamp(args.Flags.TimestampField, res.Hits.Hits, args.Flags.Asc)
 	}
 
 	if res.Aggregations != nil {
 		if args.Flags.CountOnly {
-			SendMessageLine([]byte("0"), out)
+			outc <- []byte("0\n")
 
 			return ts, nil
 		}
@@ -427,7 +429,7 @@ func ElasticsearchGetDoAggregation(args *ElasticsearchGetFuncArgs, out chan *Mes
 			return ts, errors.Wrap(err, "Aggregations results are empty")
 		}
 
-		SendMessageLine(payload, out)
+		outc <- payload
 	}
 
 	return ts, nil

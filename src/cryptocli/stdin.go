@@ -8,19 +8,22 @@ import (
 	"github.com/spf13/pflag"
 )
 
-var stdinMutex = struct{sync.Mutex; Init bool}{Init: false,}
+var stdinMutex = &StdinMutex{Init: false,}
+
+type StdinMutex struct {
+	Init bool
+	sync.Mutex
+}
 
 func init() {
 	MODULELIST.Register("stdin", "Reads from stdin", NewStdin)
 }
 
 type Stdin struct {
-	in chan *Message
-	out chan *Message
 	sync *sync.WaitGroup
 }
 
-func (m *Stdin) Init(global *GlobalFlags) (error) {
+func (m *Stdin) Init(in, out chan *Message, global *GlobalFlags) (error) {
 	stdinMutex.Lock()
 	defer stdinMutex.Unlock()
 	if stdinMutex.Init {
@@ -29,33 +32,90 @@ func (m *Stdin) Init(global *GlobalFlags) (error) {
 
 	stdinMutex.Init = true
 
-	return nil
-}
-
-func (m Stdin) Start() {
-	m.sync.Add(1)
-
+	datac := make(chan []byte)
 	// Cancel will tell stdin to stop reading and close the out channel
 	cancel := make(chan struct{}, 0)
 
-	go stdinStartOut(m.out, cancel)
-	go stdinStartIn(m.in, cancel, m.sync)
-}
 
-func (m Stdin) Wait() {
-	m.sync.Wait()
-}
+	go func(in, out chan *Message, datac chan []byte, cancel chan struct{}) {
+		wg := &sync.WaitGroup{}
+		init := false
+		outc := make(MessageChannel)
+		out <- &Message{
+			Type: MessageTypeChannel,
+			Interface: outc,
+		}
 
-func (m *Stdin) In(in chan *Message) (chan *Message) {
-	m.in = in
+		LOOP: for message := range in {
+			switch message.Type {
+				case MessageTypeTerminate:
+					close(cancel)
+					if ! init {
+						close(outc)
+					}
+					for range datac {}
+					wg.Wait()
+					out <- message
+					break LOOP
 
-	return in
-}
+				case MessageTypeChannel:
+					inc, ok := message.Interface.(MessageChannel)
+					if ok {
+						if ! init {
+							init = true
+						} else {
+							outc = make(MessageChannel)
 
-func (m *Stdin) Out(out chan *Message) (chan *Message) {
-	m.out = out
+							out <- &Message{
+								Type: MessageTypeChannel,
+								Interface: outc,
+							}
+						}
 
-	return out
+						wg.Add(1)
+						go func(inc, outc MessageChannel, datac chan []byte, wg *sync.WaitGroup, cancel chan struct{}, mutex *StdinMutex) {
+							defer wg.Done()
+							defer mutex.Unlock()
+							defer DrainChannel(inc, nil)
+							defer close(outc)
+
+							mutex.Lock()
+
+							LOOP: for {
+								select {
+									case <- cancel:
+										break LOOP
+									case _, opened := <- inc:
+										if ! opened {
+											break LOOP
+										}
+									case payload, opened := <- datac:
+										if ! opened {
+											break LOOP
+										}
+
+										outc <- payload
+								}
+							}
+
+						}(inc, outc, datac, wg, cancel, stdinMutex)
+					}
+			}
+		}
+
+		wg.Wait()
+		// Last message will signal the closing of the channel
+		<- in
+		close(out)
+	}(in, out, datac, cancel)
+
+	go func(out chan *Message, datac chan []byte, cancel chan struct{}) {
+		stdinStartOut(datac, cancel)
+		out <- &Message{Type: MessageTypeTerminate,}
+		close(datac)
+	}(out, datac, cancel)
+
+	return nil
 }
 
 func NewStdin() (Module) {
@@ -64,27 +124,28 @@ func NewStdin() (Module) {
 	}
 }
 
-func stdinStartOutRead(write chan *Message, closed *StdinCloseSync, syn chan struct{}) {
+func stdinStartOutRead(datac chan []byte, closed *StdinCloseSync, syn chan struct{}) {
 	err := ReadBytesStep(os.Stdin, func(payload []byte) (bool) {
 		closed.RLock()
 		if closed.Closed {
 			return false
 		}
-		closed.RUnlock()
 
-		SendMessage(payload, write)
+		datac <- payload
+		closed.RUnlock()
 		return true
 	})
 	if err != nil {
-		log.Println(errors.Wrap(err, "Error copying stdin"))
+		err = errors.Wrap(err, "Error copying stdin")
+		log.Println(err.Error())
 	}
 
 	closed.Lock()
 	if ! closed.Closed {
 		closed.Closed = true
-		close(write)
 	}
 	closed.Unlock()
+
 	close(syn)
 }
 
@@ -93,16 +154,15 @@ type StdinCloseSync struct {
 	Closed bool
 }
 
-func stdinStartOut(write chan *Message, cancel chan struct{}) {
-	// Closed makes sure it is safe to close the channel.
-	// Otherwise it panics.
+func stdinStartOut(datac chan []byte, cancel chan struct{}) {
+	// Closed will signal the reading stdin callback to stop reading.
 	closed := &StdinCloseSync{
 		Closed: false,
 	}
 
 	syn := make(chan struct{}, 0)
 
-	go stdinStartOutRead(write, closed, syn)
+	go stdinStartOutRead(datac, closed, syn)
 
 	select {
 		case <- cancel:
@@ -112,17 +172,8 @@ func stdinStartOut(write chan *Message, cancel chan struct{}) {
 	closed.Lock()
 	if ! closed.Closed {
 		closed.Closed = true
-		close(write)
 	}
 	closed.Unlock()
 }
 
-func stdinStartIn(read chan *Message, cancel chan struct{}, wg *sync.WaitGroup) {
-	for range read {}
-
-	close(cancel)
-
-	wg.Done()
-}
-
-func (m *Stdin) SetFlagSet(fs *pflag.FlagSet) {}
+func (m *Stdin) SetFlagSet(fs *pflag.FlagSet, args []string) {}

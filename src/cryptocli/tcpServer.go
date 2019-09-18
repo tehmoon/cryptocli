@@ -1,8 +1,8 @@
 package main
 
 import (
-	"time"
 	"sync"
+	"time"
 	"log"
 	"crypto/tls"
 	"net"
@@ -15,17 +15,120 @@ func init() {
 }
 
 type TCPServer struct {
-	in chan *Message
-	out chan *Message
-	sync *sync.WaitGroup
 	addr string
-	listener net.Listener
 	cert string
 	key string
 	connectTimeout time.Duration
+	readTimeout time.Duration
 }
 
-func (m *TCPServer) Init(global *GlobalFlags) (error) {
+type TCPServerRelayer struct {
+	Outc MessageChannel
+	Inc MessageChannel
+	Wg *sync.WaitGroup
+}
+
+func tcpServerHandler(conn net.Conn, m *TCPServer, relay *TCPServerRelayer) {
+	inc, outc, wg := relay.Inc, relay.Outc, relay.Wg
+	defer wg.Done()
+
+	syn := &sync.WaitGroup{}
+	syn.Add(2)
+
+	go func(conn net.Conn, inc MessageChannel, wg *sync.WaitGroup) {
+		defer wg.Done()
+		defer conn.Close()
+
+		for payload := range inc {
+			_, err := conn.Write(payload)
+			if err != nil {
+				err = errors.Wrap(err, "Error writing to tcp connection")
+				log.Println(err.Error())
+				break
+			}
+		}
+
+		DrainChannel(inc, nil)
+	}(conn, inc, syn)
+
+	go func(conn net.Conn, outc MessageChannel, timeout time.Duration, wg *sync.WaitGroup) {
+		defer wg.Done()
+		defer close(outc)
+
+		conn.SetReadDeadline(time.Now().Add(timeout))
+
+		err := ReadBytesStep(conn, func(payload []byte) bool {
+			outc <- payload
+			conn.SetReadDeadline(time.Now().Add(timeout))
+
+			return true
+		})
+		if err != nil {
+			err = errors.Wrap(err, "Error reading from tcp socket")
+			log.Println(err.Error())
+			return
+		}
+	}(conn, outc, m.readTimeout, syn)
+
+	syn.Wait()
+}
+
+func tcpServerServe(conn net.Conn, m *TCPServer, relayer chan *TCPServerRelayer, connc, donec, cancel chan struct{}) {
+	donec <- struct{}{}
+
+	defer func(donec chan struct{}) {
+		<- donec
+	}(donec)
+
+	select {
+		case relay, opened := <- relayer:
+			if ! opened {
+				return
+			}
+
+			tcpServerHandler(conn, m, relay)
+			return
+		case <- cancel:
+			return
+		default:
+	}
+
+	select {
+		case connc <- struct{}{}:
+		case <- cancel:
+			return
+	}
+
+	select {
+		case relay, opened := <- relayer:
+			if ! opened {
+				return
+			}
+
+			tcpServerHandler(conn, m, relay)
+			return
+		case <- cancel:
+			return
+	}
+}
+
+func (m *TCPServer) SetFlagSet(fs *pflag.FlagSet, args []string) {
+	fs.StringVar(&m.addr, "listen", "", "Listen on addr:port. If port is 0, random port will be assigned")
+	fs.StringVar(&m.cert, "certificate", "", "Path to certificate in PEM format")
+	fs.StringVar(&m.key, "key", "", "Path to private key in PEM format")
+	fs.DurationVar(&m.connectTimeout, "connect-timeout", 30 * time.Second, "Max amount of time to wait for a potential connection when pipeline is closing")
+	fs.DurationVar(&m.readTimeout, "read-timeout", 15 * time.Second, "Amout of time to wait reading from the connection")
+}
+
+func NewTCPServer() (Module) {
+	return &TCPServer{}
+}
+
+func (m *TCPServer) Init(in, out chan *Message, global *GlobalFlags) (error) {
+	if m.readTimeout < 1 {
+		return errors.Errorf("Flag %q cannot be negative or zero", "--read-timeout")
+	}
+
 	if m.connectTimeout < 1 {
 		return errors.Errorf("Flag %q cannot be negative or zero", "--connect-timeout")
 	}
@@ -43,7 +146,8 @@ func (m *TCPServer) Init(global *GlobalFlags) (error) {
 		return errors.Wrap(err, "Unable to resolve tcp address")
 	}
 
-	m.listener, err = net.ListenTCP("tcp", addr)
+	var listener net.Listener
+	listener, err = net.ListenTCP("tcp", addr)
 	if err != nil {
 		return errors.Wrap(err, "Unable to listen on tcp address")
 	}
@@ -58,131 +162,149 @@ func (m *TCPServer) Init(global *GlobalFlags) (error) {
 			Certificates: []tls.Certificate{pem,},
 		}
 
-		m.listener = tls.NewListener(m.listener, config)
+		listener = tls.NewListener(listener, config)
 	}
 
-	log.Printf("Tcp-server listening on %s with TLS enabled: %t\n", m.listener.Addr().String(), m.key != "" && m.cert != "")
-
-	return nil
-}
-
-func (m TCPServer) Start() {
-	m.sync.Add(2)
+	log.Printf("Tcp-server listening on %s with TLS enabled: %t\n", listener.Addr().String(), m.key != "" && m.cert != "")
 
 	go func() {
-		var conn net.Conn
-		var err error
+		wg := &sync.WaitGroup{}
+		relayer := make(chan *TCPServerRelayer)
+		connc := make(chan struct{})
+		cancel := make(chan struct{})
 
-		wait := make(chan struct{})
+		donec := make(chan struct{}, global.MaxConcurrentStreams)
 
-		go func() {
-			conn, err = m.listener.Accept()
-			if err != nil {
-				return
-			}
-
-			close(wait)
-		}()
-
-		// Channel to relay messages. It has a buffer of 1
-		// because the first message must not be blocking
-		relayc := make(chan *Message, 1)
-
-		select {
-			case <- wait:
-			case <- time.NewTicker(m.connectTimeout).C:
-				log.Println("Connect timeout reached, nobody connected and no inputs were sent")
-
-				close(relayc)
-				close(m.out)
-				m.sync.Done()
-				m.sync.Done()
-				return
-			case message, closed := <- m.in:
-				log.Println("Message receive before connection got accepted")
-
-				select {
-					case <- time.NewTicker(m.connectTimeout).C:
-						log.Println("Connect timeout reached, let's hope somebody's connected")
-					case <- wait:
-				}
-
-				if closed && conn == nil {
-					log.Println("Pipeline is shutting down and nobody connected")
-					close(relayc)
-					close(m.out)
-					m.sync.Done()
-					m.sync.Done()
+		go func(m *TCPServer, l net.Listener, relayer chan *TCPServerRelayer, connc, done, cancel chan struct{}) {
+			for {
+				conn, err := l.Accept()
+				if err != nil {
+					err = errors.Wrap(err, "Error accepting tcp connection")
+					log.Println(err.Error())
 					return
 				}
 
-				relayc <- message
-		}
-
-		go func() {
-			for message := range m.in {
-				relayc <- message
+				go tcpServerServe(conn, m, relayer, connc, donec, cancel)
 			}
+		}(m, listener, relayer, connc, donec, cancel)
 
-			close(relayc)
-		}()
+		ticker := time.NewTicker(m.connectTimeout)
 
-		go tcpServerStartIn(conn, relayc, m.sync)
-		go tcpServerStartOut(conn, m.out, m.sync)
-	}()
-}
+		incs := make([]MessageChannel, 0)
+		outcs := make([]MessageChannel, 0)
 
-func tcpServerStartIn(conn net.Conn, in chan *Message, wg *sync.WaitGroup) {
-	defer conn.Close()
-	defer wg.Done()
+		LOOP: for {
+			select {
+				case <- ticker.C:
+					ticker.Stop()
+					close(cancel)
+					wg.Wait()
+					log.Println("Connect timeout reached, nobody connected and no messages from inputs were received")
+					out <- &Message{
+						Type: MessageTypeTerminate,
+					}
 
-	for message := range in {
-		_, err := conn.Write(message.Payload)
-		if err != nil {
-			log.Println(errors.Wrap(err, "Error writing to tcp connection in tcp-server"))
-			return
+					break LOOP
+				case _, opened := <- connc:
+					if ! opened {
+						break LOOP
+					}
+
+					outc := make(MessageChannel)
+
+					out <- &Message{
+						Type: MessageTypeChannel,
+						Interface: outc,
+					}
+
+					if len(incs) == 0 {
+						outcs = append(outcs, outc)
+						continue
+					}
+
+					wg.Add(1)
+
+					inc := incs[0]
+					incs = incs[1:]
+
+					relayer <- &TCPServerRelayer{
+						Inc: inc,
+						Outc: outc,
+						Wg: wg,
+					}
+
+					if ! global.MultiStreams {
+						close(cancel)
+						wg.Wait()
+						out <- &Message{Type: MessageTypeTerminate,}
+						break LOOP
+					}
+
+				case message, opened := <- in:
+					ticker.Stop()
+					if ! opened {
+						close(cancel)
+						wg.Wait()
+						out <- &Message{
+							Type: MessageTypeTerminate,
+						}
+						break LOOP
+					}
+
+					switch message.Type {
+						case MessageTypeTerminate:
+							close(cancel)
+							wg.Wait()
+							out <- message
+							break LOOP
+						case MessageTypeChannel:
+							inc, ok := message.Interface.(MessageChannel)
+							if ok {
+								if len(outcs) == 0 {
+									incs = append(incs, inc)
+									continue
+								}
+
+								wg.Add(1)
+								outc := outcs[0]
+								outcs = outcs[1:]
+
+								relayer <- &TCPServerRelayer{
+									Inc: inc,
+									Outc: outc,
+									Wg: wg,
+								}
+
+								if ! global.MultiStreams {
+									incs = append(incs, inc)
+									close(cancel)
+									wg.Wait()
+									out <- &Message{Type: MessageTypeTerminate,}
+									break LOOP
+								}
+							}
+					}
+			}
 		}
-	}
-}
 
-func tcpServerStartOut(conn net.Conn, out chan *Message, wg *sync.WaitGroup) {
-	defer close(out)
-	defer wg.Done()
+		listener.Close()
+		close(connc)
 
-	err := ReadBytesSendMessages(conn, out)
-	if err != nil {
-		log.Println(errors.Wrap(err, "Error reading tcp connection in tcp-server"))
-		return
-	}
-}
+		for _, outc := range outcs {
+			close(outc)
+		}
 
-func (m TCPServer) Wait() {
-	m.sync.Wait()
+		for _, inc := range incs {
+			DrainChannel(inc, nil)
+		}
 
-	for range m.in {}
-}
+		wg.Wait()
+		close(relayer)
+		close(donec)
 
-func (m *TCPServer) In(in chan *Message) (chan *Message) {
-	m.in = in
+		<- in
+		close(out)
+	}()
 
-	return in
-}
-
-func (m *TCPServer) Out(out chan *Message) (chan *Message) {
-	m.out = out
-
-	return out
-}
-
-func (m *TCPServer) SetFlagSet(fs *pflag.FlagSet) {
-	fs.StringVar(&m.addr, "listen", "", "Listen on addr:port. If port is 0, random port will be assigned")
-	fs.StringVar(&m.cert, "certificate", "", "Path to certificate in PEM format")
-	fs.StringVar(&m.key, "key", "", "Path to private key in PEM format")
-	fs.DurationVar(&m.connectTimeout, "connect-timeout", 30 * time.Second, "Max amount of time to wait for a potential connection when pipeline is closing")
-}
-
-func NewTCPServer() (Module) {
-	return &TCPServer{
-		sync: &sync.WaitGroup{},
-	}
+	return nil
 }

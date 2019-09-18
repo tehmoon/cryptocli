@@ -1,65 +1,67 @@
 package main
 
 import (
-	"sync"
 	"github.com/spf13/pflag"
+	"sync"
 )
 
 func init() {
 	MODULELIST.Register("lower", "Lowercase all ascii characters", NewLower)
 }
 
-type Lower struct {
-	in chan *Message
-	out chan *Message
-	wg *sync.WaitGroup
-}
+type Lower struct {}
 
-func (m Lower) Init(global *GlobalFlags) (error) {
-	return nil
-}
+func (m Lower) Init(in, out chan *Message, global *GlobalFlags) (error) {
+	go func(in, out chan *Message) {
+		wg := &sync.WaitGroup{}
 
-func (m Lower) Start() {
-	m.wg.Add(1)
+		LOOP: for message := range in {
+			switch message.Type {
+				case MessageTypeTerminate:
+					wg.Wait()
+					out <- message
+					break LOOP
+				case MessageTypeChannel:
+					inc, ok := message.Interface.(MessageChannel)
+					if ok {
+						outc := make(MessageChannel)
 
-	go startLower(m.in, m.out, m.wg)
-}
+						out <- &Message{
+							Type: MessageTypeChannel,
+							Interface: outc,
+						}
+						wg.Add(1)
+						go startLower(inc, outc, wg)
+					}
 
-func (m Lower) Wait() {
-	m.wg.Wait()
-}
-
-func NewLower() (Module) {
-	return &Lower{
-		wg: &sync.WaitGroup{},
-	}
-}
-
-func (m *Lower) In(in chan *Message) (chan *Message) {
-	m.in = in
-
-	return in
-}
-
-func (m *Lower) Out(out chan *Message) (chan *Message) {
-	m.out = out
-
-	return out
-}
-
-func startLower(in, out chan *Message, wg *sync.WaitGroup) {
-	for message := range in {
-		for i, b := range message.Payload {
-			if b > 64 && b < 91 {
-				message.Payload[i] = b + 32
 			}
 		}
 
-		out <- message
+		wg.Wait()
+		// Last message will signal the closing of the channel
+		<- in
+		close(out)
+	}(in, out)
+
+	return nil
+}
+
+func NewLower() (Module) {
+	return &Lower{}
+}
+
+func startLower(inc, outc MessageChannel, wg *sync.WaitGroup) {
+	for payload := range inc {
+		for i, b := range payload {
+			if b > 64 && b < 91 {
+				payload[i] = b + 32
+			}
+		}
+		outc <- payload
 	}
 
-	close(out)
+	close(outc)
 	wg.Done()
 }
 
-func (m *Lower) SetFlagSet(fs *pflag.FlagSet) {}
+func (m *Lower) SetFlagSet(fs *pflag.FlagSet, args []string) {}

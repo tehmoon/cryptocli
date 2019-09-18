@@ -1,90 +1,91 @@
 package main
 
 import (
-	"sync"
 	"github.com/spf13/pflag"
 	"compress/gzip"
 	"io"
 	"github.com/tehmoon/errors"
 	"log"
+	"sync"
 )
 
 func init() {
 	MODULELIST.Register("gunzip", "Gunzip de-compress", NewGunzip)
 }
 
-type Gunzip struct {
-	in chan *Message
-	out chan *Message
-	wg *sync.WaitGroup
-	reader *io.PipeReader
-	writer *io.PipeWriter
-}
+type Gunzip struct {}
 
-func (m *Gunzip) Init(global *GlobalFlags) (error) {
-	m.reader, m.writer = io.Pipe()
+func (m *Gunzip) Init(in, out chan *Message, global *GlobalFlags) (error) {
+	go func(in, out chan *Message) {
+		wg := &sync.WaitGroup{}
+
+		LOOP: for message := range in {
+			switch message.Type {
+				case MessageTypeTerminate:
+					wg.Wait()
+					out <- message
+					break LOOP
+				case MessageTypeChannel:
+					inc, ok := message.Interface.(MessageChannel)
+					if ok {
+						outc := make(MessageChannel)
+
+						out <- &Message{
+							Type: MessageTypeChannel,
+							Interface: outc,
+						}
+
+						reader, writer := io.Pipe()
+
+						wg.Add(2)
+						go func() {
+							for payload := range inc {
+								_, err := writer.Write(payload)
+								if err != nil {
+									err = errors.Wrap(err, "Error wrinting data to pipe")
+									log.Println(err.Error())
+									break
+								}
+							}
+
+							writer.Close()
+							DrainChannel(inc, nil)
+							wg.Done()
+						}()
+
+						go func() {
+							defer wg.Done()
+							defer close(outc)
+
+							gzipReader, err := gzip.NewReader(reader)
+							if err != nil {
+								err = errors.Wrap(err, "Error initializing gunzip reader")
+								log.Println(err.Error())
+								return
+							}
+
+							err = ReadBytesSendMessages(gzipReader, outc)
+							if err != nil {
+								err = errors.Wrap(err, "Error reading gzip reader in gunzip")
+								log.Println(err.Error())
+								return
+							}
+						}()
+					}
+			}
+		}
+
+		wg.Wait()
+		// Last message will signal the closing of the channel
+		<- in
+		close(out)
+	}(in, out)
 
 	return nil
 }
 
-func (m Gunzip) Start() {
-	m.wg.Add(1)
-
-	go startGunzipIn(m.in, m.writer)
-	go startGunzipOut(m.out, m.reader, m.wg)
-}
-
-func (m Gunzip) Wait() {
-	m.wg.Wait()
-
-	for range m.in {}
-}
-
-func (m *Gunzip) In(in chan *Message) (chan *Message) {
-	m.in = in
-
-	return in
-}
-
-func (m *Gunzip) Out(out chan *Message) (chan *Message) {
-	m.out = out
-
-	return out
-}
-
 func NewGunzip() (Module) {
-	return &Gunzip{
-		wg: &sync.WaitGroup{},
-	}
+	return &Gunzip{}
 }
 
-func startGunzipIn(in chan *Message, writer io.WriteCloser) {
-	for message := range in {
-		_, err := writer.Write(message.Payload)
-		if err != nil {
-			log.Println(errors.Wrap(err, "Error writing data to pipe in gunzip"))
-			break
-		}
-	}
-
-	writer.Close()
-}
-
-func startGunzipOut(out chan *Message, reader io.Reader, wg *sync.WaitGroup) {
-	defer wg.Done()
-	defer close(out)
-
-	gzipReader, err := gzip.NewReader(reader)
-	if err != nil {
-		log.Println(errors.Wrap(err, "Error initializing gunzip reader"))
-		return
-	}
-
-	err = ReadBytesSendMessages(gzipReader, out)
-	if err != nil {
-		log.Println(errors.Wrap(err, "Error reading gzip reader in gunzip"))
-		return
-	}
-}
-
-func (m *Gunzip) SetFlagSet(fs *pflag.FlagSet) {}
+func (m *Gunzip) SetFlagSet(fs *pflag.FlagSet, args []string) {}

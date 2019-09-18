@@ -3,7 +3,6 @@ package main
 import (
 	"sync"
 	"github.com/spf13/pflag"
-	"hash"
 	"github.com/tehmoon/errors"
 	"strings"
 	"crypto"
@@ -18,14 +17,11 @@ func init() {
 }
 
 type Dgst struct {
-	in chan *Message
-	out chan *Message
-	hash hash.Hash
+	hash crypto.Hash
 	algo string
-	wg *sync.WaitGroup
 }
 
-func findDgst(name string) (hash.Hash, error) {
+func findDgst(name string) (crypto.Hash, error) {
 	var hash crypto.Hash
 	name = strings.ToLower(name)
 
@@ -57,17 +53,17 @@ func findDgst(name string) (hash.Hash, error) {
 		case "ripemd160":
 			hash = crypto.RIPEMD160
 		default:
-			return nil, errors.Errorf("Hash algorithm %q is no supported", name)
+			return 0, errors.Errorf("Hash algorithm %q is no supported", name)
 	}
 
 	if ! hash.Available() {
-		return nil, errors.Errorf("Hash algorithm %q is not linked to this binary", name)
+		return 0, errors.Errorf("Hash algorithm %q is not linked to this binary", name)
 	}
 
-	return hash.New(), nil
+	return hash, nil
 }
 
-func (m *Dgst) Init(global *GlobalFlags) (error) {
+func (m *Dgst) Init(in, out chan *Message, global *GlobalFlags) (error) {
 	var err error
 
 	m.hash, err = findDgst(m.algo)
@@ -75,48 +71,55 @@ func (m *Dgst) Init(global *GlobalFlags) (error) {
 		return err
 	}
 
+	go func(in, out chan *Message) {
+		wg := &sync.WaitGroup{}
+
+		LOOP: for message := range in {
+			switch message.Type {
+				case MessageTypeTerminate:
+					wg.Wait()
+					out <- message
+					break LOOP
+				case MessageTypeChannel:
+					inc, ok := message.Interface.(MessageChannel)
+					if ok {
+						outc := make(MessageChannel)
+
+						out <- &Message{
+							Type: MessageTypeChannel,
+							Interface: outc,
+						}
+						hash := m.hash.New()
+						wg.Add(1)
+
+						go func() {
+							for payload := range inc {
+								hash.Write(payload)
+							}
+
+							outc <- hash.Sum(nil)
+							close(outc)
+							wg.Done()
+						}()
+					}
+
+			}
+		}
+
+		wg.Wait()
+		// Last message will signal the closing of the channel
+		<- in
+		close(out)
+	}(in, out)
+
+
 	return nil
 }
 
-func (m Dgst) Start() {
-	m.wg.Add(1)
-
-	go func() {
-		for message := range m.in {
-			m.hash.Write(message.Payload)
-		}
-
-		SendMessage(m.hash.Sum(nil), m.out)
-		close(m.out)
-
-		m.wg.Done()
-	}()
-}
-
-func (m Dgst) Wait() {
-	m.wg.Wait()
-
-	for range m.in {}
-}
-
-func (m *Dgst) In(in chan *Message) (chan *Message) {
-	m.in = in
-
-	return in
-}
-
-func (m *Dgst) Out(out chan *Message) (chan *Message) {
-	m.out = out
-
-	return out
-}
-
 func NewDgst() (Module) {
-	return &Dgst{
-		wg: &sync.WaitGroup{},
-	}
+	return &Dgst{}
 }
 
-func (m *Dgst) SetFlagSet(fs *pflag.FlagSet) {
+func (m *Dgst) SetFlagSet(fs *pflag.FlagSet, args []string) {
 	fs.StringVar(&m.algo, "algo", "", "Hash algorithm to use: md5, sha1, sha256, sha512, sha3_224, sha3_256, sha3_384, sha3_512, blake2s_256, blake2b_256, blake2b_384, blake2b_512, ripemd160")
 }

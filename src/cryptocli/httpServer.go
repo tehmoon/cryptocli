@@ -2,65 +2,59 @@ package main
 
 import (
 	"time"
-	"io"
 	"net/http"
 	"github.com/tehmoon/errors"
 	"github.com/spf13/pflag"
 	"sync"
 	"log"
 	"net"
+	"io"
 )
 
 func init() {
 	MODULELIST.Register("http-server", "Create an http web webserver", NewHTTPServer)
 }
 
-type HTTPServerHandleOptions struct {
-	Waitc chan struct{}
-	Relayc chan *Message
-	Init bool
-	Sync *sync.WaitGroup
-
-	sync.Mutex
-}
-
 type HTTPServer struct {
-	in chan *Message
-	out chan *Message
-	req *http.Request
 	addr string
-	ln net.Listener
 	connectTimeout time.Duration
-	sync *sync.WaitGroup
+	writeTimeout time.Duration
+	readHeaderTimeout time.Duration
+	idleTimeout time.Duration
+	readTimeout time.Duration
 }
 
-func (m *HTTPServer) SetFlagSet(fs *pflag.FlagSet) {
+func (m *HTTPServer) SetFlagSet(fs *pflag.FlagSet, args []string) {
 	fs.StringVar(&m.addr, "addr", "", "Listen on an address")
 	fs.DurationVar(&m.connectTimeout, "connect-timeout", 30 * time.Second, "Max amount of time to wait for a potential connection when pipeline is closing")
+	fs.DurationVar(&m.writeTimeout, "write-timeout", 15 * time.Second, "Set maximum duration before timing out writes of the response")
+	fs.DurationVar(&m.readTimeout, "read-timeout", 15 * time.Second, "Set the maximum duration for reading the entire request, including the body.")
+	fs.DurationVar(&m.readHeaderTimeout, "read-headers-timeout", 15 * time.Second, "Set the amount of time allowed to read request headers.")
+	fs.DurationVar(&m.idleTimeout, "iddle-timeout", 5 * time.Second, "IdleTimeout is the maximum amount of time to wait for the next request when keep-alives are enabled")
 }
 
-func (m *HTTPServer) In(in chan *Message) (chan *Message) {
-	m.in = in
+func HTTPServerHandleResponse(m *HTTPServer, w http.ResponseWriter, req *http.Request, relay *HTTPServerRelayer) {
+	outc, inc, wg := relay.Outc, relay.Inc, relay.Wg
+	defer wg.Done()
+	defer DrainChannel(inc, nil)
+	defer close(outc)
 
-	return in
-}
-
-func (m *HTTPServer) Out(out chan *Message) (chan *Message) {
-	m.out = out
-
-	return out
-}
-
-func httpServerHandleIn(in chan *Message, w http.ResponseWriter, wait, done *sync.WaitGroup) {
-	defer done.Done()
-	wait.Wait()
+	if req.Body != nil {
+		err := ReadBytesSendMessages(req.Body, outc)
+		if err != nil && err != io.EOF {
+			err = errors.Wrap(err, "Error reading from http request")
+			log.Println(err.Error())
+			return
+		}
+	}
 
 	w.WriteHeader(200)
 
-	for message := range in {
-		_, err := w.Write(message.Payload)
+	for payload := range inc {
+		_, err := w.Write(payload)
 		if err != nil {
-			log.Println(errors.Wrap(err, "Error writing tcp connection in http-server"))
+			err = errors.Wrap(err, "Error writing to http connect")
+			log.Println(err.Error())
 			return
 		}
 
@@ -70,54 +64,71 @@ func httpServerHandleIn(in chan *Message, w http.ResponseWriter, wait, done *syn
 	}
 }
 
-func httpServerHandleOut(out chan *Message, body io.ReadCloser, wait *sync.WaitGroup) {
-	defer close(out)
-	defer wait.Done()
-	defer body.Close()
+func HTTPServerHandler(m *HTTPServer, relayer chan *HTTPServerRelayer, connc, donec, cancel chan struct{}) (func(w http.ResponseWriter, r *http.Request)) {
+	return func(w http.ResponseWriter, req *http.Request) {
+		donec <- struct{}{}
 
-	err := ReadBytesSendMessages(body, out)
-	if err != nil {
-		log.Println(errors.Wrap(err, "Error reading tcp connection in http-server"))
-	}
-}
+		defer func(donec chan struct{}) {
+			<- donec
+		}(donec)
 
-func httpServerHandle(in, out chan *Message, options *HTTPServerHandleOptions) (func(w http.ResponseWriter, r *http.Request)) {
-	return func(w http.ResponseWriter, r *http.Request) {
-		options.Lock()
+		select {
+			case <- cancel:
+				w.WriteHeader(500)
+				return
+			case relay, opened := <- relayer:
+				if ! opened {
+					w.WriteHeader(500)
+					return
+				}
 
-		if options.Init {
-			w.WriteHeader(500)
-			options.Unlock()
-			return
+				HTTPServerHandleResponse(m, w, req, relay)
+				return
+			default:
 		}
 
-		defer options.Sync.Done()
+		select {
+			case connc <- struct{}{}:
+			case <- cancel:
+				w.WriteHeader(500)
+				return
+		}
 
-		options.Init = true
-		options.Unlock()
+		select {
+			case relay, opened := <- relayer:
+				if ! opened {
+					w.WriteHeader(500)
+					return
+				}
 
-		options.Waitc <- struct{}{}
-
-		// done synchronises the write part of the 2 go routines
-		done := &sync.WaitGroup{}
-		done.Add(1)
-
-		// wait tells the write part to start writing when read is done
-		// this is because the http specs says we should read the body
-		// before writing
-		wait := &sync.WaitGroup{}
-		wait.Add(1)
-
-		go httpServerHandleIn(in, w, wait, done)
-		go httpServerHandleOut(out, r.Body, wait)
-
-		done.Wait()
+				HTTPServerHandleResponse(m, w, req, relay)
+				return
+			case <- cancel:
+				w.WriteHeader(500)
+				return
+		}
 	}
 }
 
-func (m *HTTPServer) Init(global *GlobalFlags) (error) {
+func (m *HTTPServer) Init(in, out chan *Message, global *GlobalFlags) (error) {
 	if m.connectTimeout < 1 {
 		return errors.Errorf("Flag %q cannot be negative or zero", "--connect-timeout")
+	}
+
+	if m.connectTimeout < 1 {
+		return errors.Errorf("Flag %q cannot be negative or zero", "--connect-timeout")
+	}
+
+	if m.readTimeout < 1 {
+		return errors.Errorf("Flag %q cannot be negative or zero", "--read-timeout")
+	}
+
+	if m.idleTimeout < 1 {
+		return errors.Errorf("Flag %q cannot be negative or zero", "--idle-timeout")
+	}
+
+	if m.writeTimeout < 1 {
+		return errors.Errorf("Flag %q cannot be negative or zero", "--write-timeout")
 	}
 
 	addr, err := net.ResolveTCPAddr("tcp", m.addr)
@@ -125,93 +136,157 @@ func (m *HTTPServer) Init(global *GlobalFlags) (error) {
 		return errors.Wrap(err, "Unable to resolve tcp address")
 	}
 
-	ln, err := net.ListenTCP("tcp", addr)
+	listener, err := net.ListenTCP("tcp", addr)
 	if err != nil {
 		return errors.Wrap(err, "Unable to listen on tcp address")
 	}
 
-	m.ln = ln
+	go func() {
+		wg := &sync.WaitGroup{}
+		relayer := make(chan *HTTPServerRelayer)
+
+		cancel := make(chan struct{})
+		incs := make([]MessageChannel, 0)
+		outcs := make([]MessageChannel, 0)
+		donec := make(chan struct{}, global.MaxConcurrentStreams)
+		connc := make(chan struct{})
+
+		mux := http.NewServeMux()
+		mux.HandleFunc("/", HTTPServerHandler(m, relayer, connc, donec, cancel))
+
+		server := &http.Server{
+			Handler: mux,
+			ReadTimeout: m.readTimeout,
+			IdleTimeout: m.idleTimeout,
+			WriteTimeout: m.writeTimeout,
+			ReadHeaderTimeout: m.readHeaderTimeout,
+		}
+		go server.Serve(listener)
+
+		ticker := time.NewTicker(m.connectTimeout)
+
+		LOOP: for {
+			select {
+				case <- ticker.C:
+					ticker.Stop()
+					close(cancel)
+					wg.Wait()
+					out <- &Message{
+						Type: MessageTypeTerminate,
+					}
+
+					break LOOP
+
+				case _, opened := <- connc:
+					if ! opened {
+						break LOOP
+					}
+
+					outc := make(MessageChannel)
+
+					out <- &Message{
+						Type: MessageTypeChannel,
+						Interface: outc,
+					}
+
+					if len(incs) == 0 {
+						outcs = append(outcs, outc)
+						continue
+					}
+
+					wg.Add(1)
+
+					inc := incs[0]
+					incs = incs[1:]
+
+					relayer <- &HTTPServerRelayer{
+						Inc: inc,
+						Outc: outc,
+						Wg: wg,
+					}
+
+					if ! global.MultiStreams {
+						close(cancel)
+						wg.Wait()
+						out <- &Message{Type: MessageTypeTerminate,}
+						break LOOP
+					}
+
+				case message, opened := <- in:
+					ticker.Stop()
+					if ! opened {
+						close(cancel)
+						wg.Wait()
+						out <- &Message{
+							Type: MessageTypeTerminate,
+						}
+						break LOOP
+					}
+
+					switch message.Type {
+						case MessageTypeTerminate:
+							close(cancel)
+							wg.Wait()
+							out <- message
+							break LOOP
+						case MessageTypeChannel:
+							inc, ok := message.Interface.(MessageChannel)
+							if ok {
+								if len(outcs) == 0 {
+									incs = append(incs, inc)
+									continue
+								}
+
+								wg.Add(1)
+								outc := outcs[0]
+								outcs = outcs[1:]
+
+								relayer <- &HTTPServerRelayer{
+									Inc: inc,
+									Outc: outc,
+									Wg: wg,
+								}
+
+								if ! global.MultiStreams {
+									incs = append(incs, inc)
+									close(cancel)
+									wg.Wait()
+									out <- &Message{Type: MessageTypeTerminate,}
+									break LOOP
+								}
+							}
+					}
+			}
+		}
+
+		listener.Close()
+		close(connc)
+
+		for _, outc := range outcs {
+			close(outc)
+		}
+
+		for _, inc := range incs {
+			DrainChannel(inc, nil)
+		}
+
+		wg.Wait()
+		close(relayer)
+		close(donec)
+
+		<- in
+		close(out)
+	}()
 
 	return nil
 }
 
-func (m *HTTPServer) Start() {
-	waitc := make(chan struct{})
-	relayc := make(chan *Message, 1)
-
-	m.sync.Add(1)
-
-	options := &HTTPServerHandleOptions{
-		Init: false,
-		Waitc: waitc,
-		Sync: m.sync,
-	}
-
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", httpServerHandle(relayc, m.out, options))
-
-	server := &http.Server{
-		Handler: mux,
-	}
-
-	startRelay := sync.WaitGroup{}
-	startRelay.Add(1)
-
-	go server.Serve(m.ln)
-	go func() {
-		select {
-			case <- waitc:
-				startRelay.Done()
-			case <- time.NewTicker(m.connectTimeout).C:
-				log.Println("Connect timeout reached, nobody connected and no inputs were sent")
-				options.Init = true
-				close(m.out)
-				m.sync.Done()
-				return
-			case message, closed := <- m.in:
-				select {
-					case <- time.NewTicker(m.connectTimeout).C:
-						log.Println("Connect timeout reached, let's hope somebody's connected")
-					case <- waitc:
-				}
-
-				options.Lock()
-				if closed && ! options.Init {
-					options.Init = true
-					options.Unlock()
-
-					log.Println("Pipeline is shutting down and nobody connected")
-					close(m.out)
-					m.sync.Done()
-					return
-				}
-
-				options.Unlock()
-
-				relayc <- message
-				startRelay.Done()
-		}
-	}()
-
-	go func() {
-		startRelay.Wait()
-
-		for message := range m.in {
-			relayc <- message
-		}
-
-		close(relayc)
-	}()
-}
-
-func (m HTTPServer) Wait() {
-	m.sync.Wait()
-
-	for range m.in {}
+type HTTPServerRelayer struct {
+	Inc MessageChannel
+	Outc MessageChannel
+	Wg *sync.WaitGroup
 }
 
 func NewHTTPServer() (Module) {
-	return &HTTPServer{
-		sync: &sync.WaitGroup{},
-	}
+	return &HTTPServer{}
 }

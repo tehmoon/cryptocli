@@ -35,8 +35,8 @@ compile() {
 
 	./cryptocli-new \
 		-- fork zip - "${BIN}" \
-		-- tee --pipe "-- dgst --algo sha256 -- hex --encode -- file --path \"${DEST}.zip.sha256\" --write" \
-		-- file --path "${DEST}.zip" --write
+		-- tee --pipe "-- dgst --algo sha256 -- hex --encode -- write-file --path \"${DEST}.zip.sha256\"" \
+		-- write-file --path "${DEST}.zip"
 }
 
 compile darwin amd64

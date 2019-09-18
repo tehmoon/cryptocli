@@ -12,210 +12,334 @@ import (
 )
 
 func init() {
-	MODULELIST.Register("websocket-server", "Create an websocket webserver", NewWebsocketServer)
-}
-
-type WebsocketServerHandleOptions struct {
-	Sync *sync.WaitGroup
-	Mutex *sync.Mutex
-	Init bool
-	Upgrader websocket.Upgrader
-	Waitc chan struct{}
-	CloseTimeout time.Duration
+	MODULELIST.Register("websocket-server", "Create an http websocket server", NewWebsocketServer)
 }
 
 type WebsocketServer struct {
-	in chan *Message
-	out chan *Message
-	sync *sync.WaitGroup
-	req *http.Request
 	addr string
-	ln net.Listener
-	mutex *sync.Mutex
-	init bool
-	closeTimeout time.Duration
 	connectTimeout time.Duration
+	readHeaderTimeout time.Duration
+	readTimeout time.Duration
+	closeTimeout time.Duration
+	mode int
+	text bool
 }
 
-func (m *WebsocketServer) SetFlagSet(fs *pflag.FlagSet) {
+func (m *WebsocketServer) SetFlagSet(fs *pflag.FlagSet, args []string) {
 	fs.StringVar(&m.addr, "addr", "", "Listen on an address")
-	fs.DurationVar(&m.closeTimeout, "close-timeout", 5 * time.Second, "Duration to wait to read the close message")
-	fs.DurationVar(&m.connectTimeout, "connect-timeout", 15 * time.Second, "Duration to wait for a websocket connection")
+	fs.DurationVar(&m.connectTimeout, "connect-timeout", 30 * time.Second, "Max amount of time to wait for a potential connection when pipeline is closing")
+	fs.DurationVar(&m.closeTimeout, "close-timeout", 15 * time.Second, "Timeout to wait for after sending the closure message")
+	fs.DurationVar(&m.readTimeout, "read-timeout", 15 * time.Second, "Read timeout for the websocket connection")
+	fs.DurationVar(&m.readHeaderTimeout, "read-headers-timeout", 15 * time.Second, "Set the amount of time allowed to read request headers.")
+	fs.BoolVar(&m.text, "text", false, "Set the websocket message's metadata to text")
 }
 
-func (m *WebsocketServer) In(in chan *Message) (chan *Message) {
-	m.in = in
+func websocketServerUpgrade(m *WebsocketServer, w http.ResponseWriter, req *http.Request, relay *WebsocketServerRelayer) {
+	outc, inc, wg := relay.Outc, relay.Inc, relay.Wg
+	defer wg.Done()
 
-	return in
-}
+	upgrader := &websocket.Upgrader{}
+	upgrader.CheckOrigin = func(r *http.Request) bool {
+		return true
+	}
 
-func (m *WebsocketServer) Out(out chan *Message) (chan *Message) {
-	m.out = out
+	conn, err := upgrader.Upgrade(w, req, nil)
+	if err != nil {
+		err = errors.Wrap(err, "Fail to upgrade to websocket")
+		log.Println(err.Error())
+		close(outc)
+		DrainChannel(relay.Inc, nil)
+		return
+	}
 
-	return out
-}
+	conn.SetPingHandler(func(message string) error {
+		conn.SetReadDeadline(time.Now().Add(m.readTimeout))
+		return conn.WriteMessage(websocket.PongMessage, []byte(`hello`))
+	})
 
-func websocketServerHandle(in, out chan *Message, options *WebsocketServerHandleOptions) (func(w http.ResponseWriter, r *http.Request)) {
-	return func(w http.ResponseWriter, r *http.Request) {
-		options.Mutex.Lock()
+	doneReadC := make(chan struct{})
+	syn := &sync.WaitGroup{}
+	syn.Add(2)
 
-		if ! options.Init {
-			c, err := options.Upgrader.Upgrade(w, r, nil)
+	go func(conn *websocket.Conn, inc MessageChannel, mode int, timeout time.Duration, doneReadC chan struct{}, wg *sync.WaitGroup) {
+		defer wg.Done()
+		defer conn.Close()
+
+		for payload := range inc {
+			err := conn.WriteMessage(mode, payload)
 			if err != nil {
-				err = errors.Wrap(err, "Fail to upgrade to websocket")
+				err = errors.Wrap(err, "Error writing to websocket connection")
 				log.Println(err.Error())
-				options.Mutex.Unlock()
+				break
+			}
+		}
+
+		DrainChannel(inc, nil)
+
+		closer := websocket.FormatCloseMessage(websocket.CloseNormalClosure, "")
+		conn.WriteMessage(websocket.CloseMessage, closer)
+
+		select {
+			case <- time.After(timeout):
+			case <- doneReadC:
+		}
+
+	}(conn, inc, m.mode, m.closeTimeout, doneReadC, syn)
+
+	go func(conn *websocket.Conn, outc MessageChannel, timeout time.Duration, doneReadC chan struct{}, wg *sync.WaitGroup) {
+		defer wg.Done()
+		defer close(outc)
+		defer close(doneReadC)
+
+		conn.SetReadDeadline(time.Now().Add(timeout))
+
+		for {
+			t, payload, err := conn.ReadMessage()
+			if err != nil {
+				err = errors.Wrap(err, "Error reading message from websocket")
+				log.Println(err.Error())
 				return
 			}
 
-			options.Sync.Add(2)
-			donec := make(chan struct{})
+			switch t {
+				case websocket.CloseMessage:
+					return
+			}
 
-			go func() {
-				defer func() {
-					c.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
+			outc <- payload
+			conn.SetReadDeadline(time.Now().Add(timeout))
+		}
+	}(conn, outc, m.readTimeout, doneReadC, syn)
 
-					select {
-						case <- time.After(options.CloseTimeout):
-						case <- donec:
-					}
-				}()
-				defer options.Sync.Done()
+	syn.Wait()
+}
 
-				for message := range in {
-					err := c.WriteMessage(websocket.BinaryMessage, message.Payload)
-					if err != nil {
-						err = errors.Wrap(err, "Error writing message to websocket")
-						log.Println(err.Error())
-						return
-					}
+func websocketServerHandle(m *WebsocketServer, relayer chan *WebsocketServerRelayer, connc, donec, cancel chan struct{}) (func(w http.ResponseWriter, r *http.Request)) {
+	return func(w http.ResponseWriter, req *http.Request) {
+		donec <- struct{}{}
+
+		defer func(donec chan struct{}) {
+			<- donec
+		}(donec)
+
+		select {
+			case <- cancel:
+				w.WriteHeader(500)
+				return
+			case relay, opened := <- relayer:
+				if ! opened {
+					w.WriteHeader(500)
+					return
 				}
-			}()
 
-			go func() {
-				defer close(donec)
-				defer close(out)
-				defer options.Sync.Done()
+				websocketServerUpgrade(m, w, req, relay)
+				return
+			default:
+		}
 
-				for {
-					_, payload, err := c.ReadMessage()
-					if err != nil {
-						err = errors.Wrap(err, "Error reading meessage from websocket")
-						log.Println(err.Error())
-						return
-					}
+		select {
+			case connc <- struct{}{}:
+			case <- cancel:
+				w.WriteHeader(500)
+				return
+		}
 
-					SendMessage(payload, out)
+		select {
+			case relay, opened := <- relayer:
+				if ! opened {
+					w.WriteHeader(500)
+					return
 				}
-			}()
 
-			options.Init = true
-			options.Sync.Done()
-			options.Mutex.Unlock()
-			close(options.Waitc)
+				websocketServerUpgrade(m, w, req, relay)
+				return
+			case <- cancel:
+				w.WriteHeader(500)
+				return
 		}
 	}
 }
 
-func (m *WebsocketServer) Init(global *GlobalFlags) (error) {
+func (m *WebsocketServer) Init(in, out chan *Message, global *GlobalFlags) (error) {
+	if m.connectTimeout < 1 {
+		return errors.Errorf("Flag %q cannot be negative or zero", "--connect-timeout")
+	}
+
+	if m.closeTimeout < 1 {
+		return errors.Errorf("Flag %q cannot be negative or zero", "--close-timeout")
+	}
+
+	if m.readHeaderTimeout < 1 {
+		return errors.Errorf("Flag %q cannot be negative or zero", "--read-header-timeout")
+	}
+
+	if m.readTimeout < 1 {
+		return errors.Errorf("Flag %q cannot be negative or zero", "--read-timeout")
+	}
+
+	if m.text {
+		m.mode = websocket.TextMessage
+	}
+
 	addr, err := net.ResolveTCPAddr("tcp", m.addr)
 	if err != nil {
 		return errors.Wrap(err, "Unable to resolve tcp address")
 	}
 
-	ln, err := net.ListenTCP("tcp", addr)
+	listener, err := net.ListenTCP("tcp", addr)
 	if err != nil {
 		return errors.Wrap(err, "Unable to listen on tcp address")
 	}
 
-	m.ln = ln
+	go func() {
+		wg := &sync.WaitGroup{}
+		relayer := make(chan *WebsocketServerRelayer)
+
+		connc := make(chan struct{})
+		cancel := make(chan struct{})
+
+		donec := make(chan struct{}, global.MaxConcurrentStreams)
+
+		mux := http.NewServeMux()
+		mux.HandleFunc("/", websocketServerHandle(m, relayer, connc, donec, cancel))
+
+		server := &http.Server{
+			Handler: mux,
+			ReadHeaderTimeout: m.readHeaderTimeout,
+		}
+		go server.Serve(listener)
+
+		incs := make([]MessageChannel, 0)
+		outcs := make([]MessageChannel, 0)
+
+		ticker := time.NewTicker(m.connectTimeout)
+
+		LOOP: for {
+			select {
+				case <- ticker.C:
+					ticker.Stop()
+					close(cancel)
+					wg.Wait()
+					log.Println("Connect timeout reached, nobody connected and no messages from inputs were received")
+					out <- &Message{
+						Type: MessageTypeTerminate,
+					}
+
+					break LOOP
+
+				case _, opened := <- connc:
+					if ! opened {
+						break LOOP
+					}
+
+					outc := make(MessageChannel)
+
+					out <- &Message{
+						Type: MessageTypeChannel,
+						Interface: outc,
+					}
+
+					if len(incs) == 0 {
+						outcs = append(outcs, outc)
+						continue
+					}
+
+					wg.Add(1)
+
+					inc := incs[0]
+					incs = incs[1:]
+
+					relayer <- &WebsocketServerRelayer{
+						Inc: inc,
+						Outc: outc,
+						Wg: wg,
+					}
+
+					if ! global.MultiStreams {
+						close(cancel)
+						wg.Wait()
+						out <- &Message{Type: MessageTypeTerminate,}
+						break LOOP
+					}
+
+				case message, opened := <- in:
+					ticker.Stop()
+					if ! opened {
+						close(cancel)
+						wg.Wait()
+						out <- &Message{
+							Type: MessageTypeTerminate,
+						}
+						break LOOP
+					}
+
+					switch message.Type {
+						case MessageTypeTerminate:
+							close(cancel)
+							wg.Wait()
+							out <- message
+							break LOOP
+						case MessageTypeChannel:
+							inc, ok := message.Interface.(MessageChannel)
+							if ok {
+
+								if len(outcs) == 0 {
+									incs = append(incs, inc)
+									continue
+								}
+
+								wg.Add(1)
+								outc := outcs[0]
+								outcs = outcs[1:]
+
+								relayer <- &WebsocketServerRelayer{
+									Inc: inc,
+									Outc: outc,
+									Wg: wg,
+								}
+
+								if ! global.MultiStreams {
+									incs = append(incs, inc)
+									close(cancel)
+									wg.Wait()
+									out <- &Message{Type: MessageTypeTerminate,}
+									break LOOP
+								}
+							}
+					}
+			}
+		}
+
+		listener.Close()
+		close(connc)
+
+		for _, outc := range outcs {
+			close(outc)
+		}
+
+		for _, inc := range incs {
+			DrainChannel(inc, nil)
+		}
+
+		wg.Wait()
+		close(relayer)
+		close(donec)
+
+		<- in
+		close(out)
+	}()
 
 	return nil
 }
 
-func (m WebsocketServer) Start() {
-	waitc := make(chan struct{})
-	relayc := make(chan *Message, 1)
-
-	options := &WebsocketServerHandleOptions{
-		Sync: m.sync,
-		Mutex: m.mutex,
-		Init: m.init,
-		Waitc: waitc,
-		CloseTimeout: m.closeTimeout,
-		Upgrader: websocket.Upgrader{},
-	}
-
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", websocketServerHandle(relayc, m.out, options))
-
-	server := &http.Server{
-		Handler: mux,
-	}
-
-	m.sync.Add(1)
-
-	startRelay := sync.WaitGroup{}
-	startRelay.Add(1)
-
-	go server.Serve(m.ln)
-	go func() {
-		select {
-			case <- waitc:
-				startRelay.Done()
-			case <- time.NewTicker(m.connectTimeout).C:
-				log.Println("Connect timeout reached, nobody connected and no inputs were sent")
-
-				options.Init = true
-				close(m.out)
-				options.Sync.Done()
-				return
-			case message, closed := <- m.in:
-				select {
-					case <- time.NewTicker(m.connectTimeout).C:
-						log.Println("Connect timeout reached, let's hope somebody's connected")
-					case <- waitc:
-				}
-
-				options.Mutex.Lock()
-				if closed && ! options.Init {
-					options.Init = true
-					options.Mutex.Unlock()
-
-					log.Println("Pipeline is shutting down and nobody connected")
-					close(m.out)
-					options.Sync.Done()
-					return
-				}
-
-				options.Mutex.Unlock()
-
-				relayc <- message
-				startRelay.Done()
-		}
-	}()
-
-	go func() {
-		startRelay.Wait()
-
-		for message := range m.in {
-			relayc <- message
-		}
-
-		close(relayc)
-	}()
-}
-
-func (m WebsocketServer) Wait() {
-	m.sync.Wait()
-
-	for range m.in {}
+type WebsocketServerRelayer struct {
+	Inc MessageChannel
+	Outc MessageChannel
+	Wg *sync.WaitGroup
 }
 
 func NewWebsocketServer() (Module) {
 	return &WebsocketServer{
-		sync: &sync.WaitGroup{},
-		mutex: &sync.Mutex{},
-		init: false,
+		mode: websocket.BinaryMessage,
 	}
 }
