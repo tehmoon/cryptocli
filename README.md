@@ -15,6 +15,15 @@ Use cryptocli on multiple platform thanks to the pure Golang implementation of m
 Cryptocli also support multi streams, meaning that you can now have multiple clients that will be
 connected to separate pipelines.
 
+## Features
+
+  - Multi client support for servers
+  - Module chaining with data pipeline approach
+  - Feedback loop in pipeline
+  - Multi OS support
+  - Single executable without any dependencies
+  - Lightweight Docker image
+
 ## Executables
 
 Run it on docker:
@@ -29,7 +38,36 @@ Find executables in the [release page](https://github.com/tehmoon/cryptocli/rele
 
 - Elasticsearch modules are compatible > 7.x
 
+## Contributing
+
+All PR are welcome!
+
+If you have an idea, feature request, bug, please file an issue!
+
 ## Examples
+
+### Websocket reverse shell
+
+target:
+```
+cryptocli \
+  --multi-streams \
+  -- fork sh \
+  -- websocket-server \
+    --addr :8080
+```
+
+client:
+```
+cryptocli \
+  -- stdin \
+  -- websocket \
+    --url ws://localhost:8080 \
+    --read-timeout 10h 
+  -- stdout
+```
+
+Tip: Add some `aes-gcm` module to make it end-to-end encrypted!
 
 ### Stdin -> tcp-server -> stdout with line buffering
 
