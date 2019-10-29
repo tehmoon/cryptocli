@@ -1,6 +1,6 @@
 [![Docker Automated build](https://img.shields.io/docker/automated/tehmoon/cryptocli)](https://hub.docker.com/r/tehmoon/cryptocli)
 [![GitHub stars](https://img.shields.io/github/stars/tehmoon/cryptocli?style=social)](https://github.com/tehmoon/cryptocli/stargazers)
-[![GitHub forks](https://img.shields.io/github/forks/tehmoon/cryptocli?style=social)](https://github.com/tehmoon/cryptocli/network/members)
+[![GitHub Release Date](https://img.shields.io/github/release-date/tehmoon/cryptocli))](https://github.com/tehmoon/cryptocli/releases)
 
 # Cryptocli v3
 
