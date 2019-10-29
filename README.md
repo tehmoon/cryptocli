@@ -1,4 +1,9 @@
 [![Docker Automated build](https://img.shields.io/docker/automated/tehmoon/cryptocli)](https://hub.docker.com/r/tehmoon/cryptocli)
+[![GitHub stars](https://img.shields.io/github/stars/tehmoon/cryptocli?style=social)](https://github.com/tehmoon/cryptocli/stargazers)
+[![GitHub Release Date](https://img.shields.io/github/release-date/tehmoon/cryptocli)](https://github.com/tehmoon/cryptocli/releases/tag/latest)
+[![GitHub last commit](https://img.shields.io/github/last-commit/tehmoon/cryptocli)](https://github.com/tehmoon/cryptocli/commits/master)
+[![GitHub issues](https://img.shields.io/github/issues/tehmoon/cryptocli)](https://github.com/tehmoon/cryptocli/issues)
+[![Twitter Follow](https://img.shields.io/twitter/follow/moonbocal?style=social)](https://twitter.com/moonbocal)
 
 # Cryptocli v3
 
