@@ -38,6 +38,12 @@ Find executables in the [release page](https://github.com/tehmoon/cryptocli/rele
 
 - Elasticsearch modules are compatible > 7.x
 
+## Contributing
+
+All PR are welcome!
+
+If you have an idea, feature request, bug, please file an issue!
+
 ## Examples
 
 ### Stdin -> tcp-server -> stdout with line buffering
