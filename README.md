@@ -15,6 +15,15 @@ Use cryptocli on multiple platform thanks to the pure Golang implementation of m
 Cryptocli also support multi streams, meaning that you can now have multiple clients that will be
 connected to separate pipelines.
 
+## Features
+
+  - Multi client support for servers
+  - Module chaining with data pipeline approach
+  - Feedback loop in pipeline
+  - Multi OS support
+  - Single executable without any dependencies
+  - Lightweight Docker image
+
 ## Executables
 
 Run it on docker:
