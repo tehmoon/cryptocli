@@ -46,6 +46,29 @@ If you have an idea, feature request, bug, please file an issue!
 
 ## Examples
 
+### Websocket reverse shell
+
+target:
+```
+cryptocli \
+  --multi-streams \
+  -- fork sh \
+  -- websocket-server \
+    --addr :8080
+```
+
+client:
+```
+cryptocli \
+  -- stdin \
+  -- websocket \
+    --url ws://localhost:8080 \
+    --read-timeout 10h 
+  -- stdout
+```
+
+Tip: Add some `aes-gcm` module to make it end-to-end encrypted!
+
 ### Stdin -> tcp-server -> stdout with line buffering
 
 ```
