@@ -1,37 +1,24 @@
 package main
 
 import (
+	"bytes"
 	"github.com/tehmoon/errors"
 	"github.com/google/shlex"
 	"github.com/spf13/pflag"
-	"bytes"
 )
 
 type Pipeline struct {
-	modules []PipelineModule
-	in chan *Message
-	out chan *Message
-}
-
-type PipelineModule struct {
-	In chan *Message
-	Out chan *Message
-	Module Module
+	modules []Module
 }
 
 func NewPipeline() (*Pipeline) {
 	return &Pipeline{
-		modules: make([]PipelineModule, 0),
+		modules: make([]Module, 0),
 	}
 }
 
 func (p *Pipeline) Add(m Module) {
-	in, out := NewPipeMessages()
-	p.modules = append(p.modules, PipelineModule{
-		In: in,
-		Out: out,
-		Module: m,
-	})
+	p.modules = append(p.modules, m)
 }
 
 func (p *Pipeline) Parse(cl string) (error) {
@@ -60,108 +47,123 @@ func (p *Pipeline) Parse(cl string) (error) {
 	return nil
 }
 
-func (p *Pipeline) In(in chan *Message) (chan *Message) {
-	p.in = in
-
-	return in
-}
-
-func (p *Pipeline) Out(out chan *Message) (chan *Message) {
-	p.out = out
-
-	return out
-}
-
-func (p Pipeline) Init(global *GlobalFlags) (error) {
+func (p Pipeline) Init(pipeIn, pipeOut chan *Message, global *GlobalFlags) (err error) {
 	if len(p.modules) == 0 {
-		go RelayMessages(p.in, p.out)
+		return nil
+	}
+
+	if len(p.modules) == 1 {
+		err = p.modules[0].Init(pipeIn, pipeOut, global)
+		if err != nil {
+			return errors.Wrapf(err, "Error in module number %d", 1)
+		}
 
 		return nil
+	}
+
+	// -1 since we start this at len of 2
+	buff := 1
+	chans := make([]chan *Message, len(p.modules) - 1)
+	for i := range chans {
+		chans[i] = make(chan *Message, buff)
 	}
 
 	for i := range p.modules {
 		module := p.modules[i]
 
-		in, out := module.In, module.Out
-		in = module.Module.In(in)
-		out = module.Module.Out(out)
-
-		err := module.Module.Init(global)
-		if err != nil {
-			return errors.Wrapf(err, "Error in module number %d", i)
-		}
-
 		if i == 0 {
-			go RelayMessages(p.in, in)
-		}
+			err = module.Init(pipeIn, chans[i], global)
+			if err != nil {
+				return errors.Wrapf(err, "Error in module number %d", i)
+			}
 
-		if i == len(p.modules) - 1 {
-			go RelayMessages(out, p.out)
 			continue
 		}
 
-		go RelayMessages(out, p.modules[i + 1].In)
+		if i == len(p.modules) - 1 {
+			err = module.Init(chans[i - 1], pipeOut, global)
+			if err != nil {
+				return errors.Wrapf(err, "Error in module number %d", i)
+			}
+
+			continue
+		}
+
+		err = module.Init(chans[i - 1], chans[i], global)
+		if err != nil {
+			return errors.Wrapf(err, "Error in module number %d", i)
+		}
 	}
 
 	return nil
 }
 
-func (p Pipeline) Start() {
-	for i := range p.modules {
-		module := p.modules[i]
-
-		module.Module.Start()
-	}
-}
-
-func (p Pipeline) Wait() {
-	for i := range p.modules {
-		module := p.modules[i]
-
-		module.Module.Wait()
-	}
-}
-
 func ReadAllPipeline(pipe string) ([]byte, error) {
-	in, out, pipeline, err := InitPipeline(pipe, &GlobalFlags{})
+	in, out, _, err := InitPipeline(pipe, &GlobalFlags{})
 	if err != nil {
 		return nil, errors.Wrap(err, "Error starting pipeline")
 	}
 
 	buff := bytes.NewBuffer(nil)
 
-	go func() {
-		for message := range out {
-			buff.Write(message.Payload)
-		}
+	outc := make(MessageChannel)
+	out <- &Message{
+		Type: MessageTypeChannel,
+		Interface: outc,
+	}
 
-		close(in)
-	}()
+	message, opened := <- in
+	if ! opened {
+		close(outc)
+		<- in
+		close(out)
+		return nil, errors.New("Pipeline is empty!")
+	}
 
-	pipeline.Start()
-	pipeline.Wait()
+	switch message.Type {
+		case MessageTypeTerminate:
+			close(outc)
+			out <- message
+		case MessageTypeChannel:
+			inc, ok := message.Interface.(MessageChannel)
+			if ok {
+				for payload := range inc {
+					buff.Write(payload)
+				}
+			}
+
+			close(outc)
+			out <- &Message{
+				Type: MessageTypeTerminate,
+			}
+	}
+
+	<- in
+	close(out)
 
 	return buff.Bytes(), nil
 }
 
-// Create a pipeline and initialize it.
-// Returns both sides of the pipeline and the pipeline itself.
-// You will also have to call Start() and Wait()
+// TOOD: refact
+//// Create a pipeline and initialize it.
+//// Returns both sides of the pipeline and the pipeline itself.
+//// You will also have to call Start() and Wait()
 func InitPipeline(pipe string, global *GlobalFlags) (in, out chan *Message, pipeline *Pipeline, err error) {
 	pipeline = NewPipeline()
-	in, out = NewPipeMessages()
-	in = pipeline.In(in)
-	out = pipeline.Out(out)
+	buff := 1
+	in, out = make(chan *Message, buff), make(chan *Message, buff)
 
 	err = pipeline.Parse(pipe)
 	if err != nil {
 		return nil, nil, nil, errors.Wrap(err, "Error parsing pipeline")
 	}
 
-	err = pipeline.Init(global)
+	err = pipeline.Init(in, out, global)
 	if err != nil {
 		return nil, nil, nil, errors.Wrap(err, "Error initializing pipeline")
 	}
 
-	return in, out, pipeline, nil
+	// we reverse at the end because the end of the pipeline is
+	// the input for another module
+	return out, in, pipeline, nil
 }

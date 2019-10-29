@@ -16,6 +16,8 @@ type Flags struct {
 
 type GlobalFlags struct {
 	Std bool
+	MultiStreams bool
+	MaxConcurrentStreams int
 }
 
 func NewFlags() (*Flags) {
@@ -51,6 +53,8 @@ func ParseFlags() (*Flags, error) {
 
 	root := pflag.NewFlagSet("root", pflag.ContinueOnError)
 	root.BoolVar(&flags.Global.Std, "std", false, "Read from stdin and writes to stdout instead of setting both modules")
+	root.BoolVar(&flags.Global.MultiStreams, "multi-streams", false, "Enable multi streams modules. Warning, some modules might be blocked waiting for  input data that will never come")
+	root.IntVar(&flags.Global.MaxConcurrentStreams, "max-concurrent-streams", 25, "Max number of concurrent streams. Highier increase bandwidth at the cost of memory and CPU.")
 	root.Usage = SetRootUsage(root)
 	err := root.Parse(os.Args[1:])
 	if err != nil {
@@ -79,7 +83,7 @@ func ParseModuleArgs(name string, module Module, args []string) (error) {
 	fs := pflag.NewFlagSet(fmt.Sprintf("module %q", name), pflag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 
-	module.SetFlagSet(fs)
+	module.SetFlagSet(fs, args)
 
 	err := fs.Parse(args)
 	if err != nil {

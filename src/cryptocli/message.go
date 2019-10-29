@@ -1,29 +1,45 @@
 package main
 
+type MessageType int
+
+const (
+	// Channel message signals a new channel.
+	// From this channel, data will be sent.
+	// The channel will be closed by the sender.
+	MessageTypeChannel MessageType = iota
+
+	// Terminate messages is used to instruct the module to terminate.
+	// It it expected to be recieved twice:
+	// 	once to shutdown the module and
+	MessageTypeTerminate
+)
+
+// A channel is a way to communicate between modules.
+// For now, it only holds an array of byte which represents
+// raw data.
+// The sender will close the channel to signal the end of the
+// transmition.
+// The reciever takes care of creating new channels.
+type MessageChannel chan []byte
+
+// MessageType will indicate what is the underlying type
+// of the field Interface. Then casting is necessary to use it.
 type Message struct {
-	Payload []byte
+	Type MessageType
+	Interface interface{}
 }
 
-func SendMessage(payload []byte, out chan *Message) {
-	out <- &Message{Payload: payload,}
-}
-
-func SendMessageLine(payload []byte, out chan *Message) {
-	SendMessage(append(payload, '\n'), out)
-}
-
-func RelayMessages(read, write chan *Message) {
-	for message := range read {
-		write <- message
+func RelayMessages(in, out chan *Message) {
+	LOOP: for message := range in {
+		switch message.Type {
+			case MessageTypeTerminate:
+				out <- message
+				break LOOP
+			default:
+				out <- message
+		}
 	}
 
-	close(write)
-}
-
-func NewPipeMessages() (chan *Message, chan *Message) {
-	buff := 5
-
-	in, out := make(chan *Message, buff), make(chan *Message, buff)
-
-	return in, out
+	<- in
+	close(out)
 }

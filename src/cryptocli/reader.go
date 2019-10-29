@@ -9,9 +9,9 @@ const (
 	ReaderMinPowerSize uint = 8
 )
 
-func ReadBytesSendMessages(r io.Reader, c chan *Message) (error) {
+func ReadBytesSendMessages(r io.Reader, c MessageChannel) (error) {
 	return ReadBytesStep(r, func(payload []byte) (bool) {
-		SendMessage(payload, c)
+		c <- payload
 
 		return true
 	})
@@ -37,7 +37,10 @@ func ReadBytesStep(r io.Reader, cb func([]byte) (bool)) (error) {
 
 		i, err = r.Read(buff)
 		if err != nil {
-			cb(buff[:i])
+			if i != 0 {
+				cb(buff[:i])
+			}
+
 			break
 		}
 
@@ -71,7 +74,7 @@ type MessageReader struct {
 }
 
 // Wrap chan *Message into a io.Pipe to make a io.ReadCloser()
-func NewMessageReader(c chan *Message) (*MessageReader) {
+func NewMessageReader(c chan []byte) (*MessageReader) {
 	mr := &MessageReader{
 		sync: make(chan struct{}, 0),
 	}
@@ -83,13 +86,13 @@ func NewMessageReader(c chan *Message) (*MessageReader) {
 
 		LOOP: for {
 			select {
-				case message, ok := <- c:
+				case payload, ok := <- c:
 					if ! ok {
 						opened = true
 						break LOOP
 					}
 
-					_, mr.err = mr.writer.Write(message.Payload)
+					_, mr.err = mr.writer.Write(payload)
 					if mr.err != nil {
 						opened = true
 						break LOOP

@@ -9,46 +9,46 @@ func init() {
 	MODULELIST.Register("null", "Discard all incoming data", NewNull)
 }
 
-type Null struct {
-	in chan *Message
-	out chan *Message
-	sync *sync.WaitGroup
-}
+type Null struct {}
 
-func (m Null) Init(global *GlobalFlags) (error) {
+func (m Null) Init(in, out chan *Message, global *GlobalFlags) (error) {
+	go func(in, out chan *Message) {
+		wg := &sync.WaitGroup{}
+
+		LOOP: for message := range in {
+			switch message.Type {
+				case MessageTypeTerminate:
+					wg.Wait()
+					out <- message
+					break LOOP
+				case MessageTypeChannel:
+					inc, ok := message.Interface.(MessageChannel)
+					if ok {
+						outc := make(MessageChannel)
+
+						out <- &Message{
+							Type: MessageTypeChannel,
+							Interface: outc,
+						}
+						wg.Add(1)
+						go DrainChannel(inc, wg)
+						close(outc)
+					}
+
+			}
+		}
+
+		wg.Wait()
+		// Last message will signal the closing of the channel
+		<- in
+		close(out)
+	}(in, out)
+
 	return nil
 }
 
-func (m Null) Start() {
-	m.sync.Add(1)
-
-	go func() {
-		for range m.in {}
-		close(m.out)
-		m.sync.Done()
-	}()
-}
-
-func (m Null) Wait() {
-	m.sync.Wait()
-}
-
-func (m *Null) In(in chan *Message) (chan *Message) {
-	m.in = in
-
-	return in
-}
-
-func (m *Null) Out(out chan *Message) (chan *Message) {
-	m.out = out
-
-	return out
-}
-
 func NewNull() (Module) {
-	return &Null{
-		sync: &sync.WaitGroup{},
-	}
+	return &Null{}
 }
 
-func (m *Null) SetFlagSet(fs *pflag.FlagSet) {}
+func (m *Null) SetFlagSet(fs *pflag.FlagSet, args []string) {}

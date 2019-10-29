@@ -14,15 +14,15 @@ func init() {
 func main() {
 	flags, err := ParseFlags()
 	if err != nil {
-		log.Println(errors.Wrap(err, "Error parsing flags"))
+		err = errors.Wrap(err, "Error parsing flags")
+		log.Println(err.Error())
 		os.Exit(3)
 	}
 
 	pipeline := NewPipeline()
 
-	in, out := NewPipeMessages()
-	in = pipeline.In(in)
-	out = pipeline.Out(out)
+	buff := flags.Global.MaxConcurrentStreams
+	in, out := make(chan *Message, buff), make(chan *Message, buff)
 
 	if flags.Global.Std {
 		pipeline.Add(NewStdin())
@@ -40,12 +40,10 @@ func main() {
 		pipeline.Add(module)
 	}
 
-	err = pipeline.Init(&flags.Global)
+	err = pipeline.Init(in, out, &flags.Global)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	pipeline.Start()
 	RelayMessages(out, in)
-	pipeline.Wait()
 }

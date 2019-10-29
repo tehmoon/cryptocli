@@ -13,13 +13,9 @@ func init() {
 	MODULELIST.Register("stdout", "Writes to stdout", NewStdout)
 }
 
-type Stdout struct {
-	in chan *Message
-	out chan *Message
-	sync *sync.WaitGroup
-}
+type Stdout struct {}
 
-func (m Stdout) Init(global *GlobalFlags) (error) {
+func (m Stdout) Init(in, out chan *Message, global *GlobalFlags) (error) {
 	stdoutMutex.Lock()
 	defer stdoutMutex.Unlock()
 	if stdoutMutex.Init {
@@ -28,43 +24,49 @@ func (m Stdout) Init(global *GlobalFlags) (error) {
 
 	stdoutMutex.Init = true
 
+	go func(in, out chan *Message) {
+		wg := &sync.WaitGroup{}
+		LOOP: for message := range in {
+			switch message.Type {
+				case MessageTypeTerminate:
+					wg.Wait()
+					out <- message
+					break LOOP
+				case MessageTypeChannel:
+					inc, ok := message.Interface.(MessageChannel)
+					if ok {
+						outc := make(MessageChannel)
+
+						out <- &Message{
+							Type: MessageTypeChannel,
+							Interface: outc,
+						}
+
+						wg.Add(1)
+						go func(inc, outc MessageChannel, wg *sync.WaitGroup) {
+							for payload := range inc {
+								os.Stdout.Write(payload)
+								os.Stdout.Sync()
+							}
+
+							close(outc)
+							wg.Done()
+						}(inc, outc, wg)
+					}
+			}
+		}
+
+		wg.Wait()
+		// Last message will signal the closing of the channel
+		<- in
+		close(out)
+	}(in, out)
+
 	return nil
 }
 
-func (m Stdout) Start() {
-	m.sync.Add(1)
-
-	go func() {
-		for message := range m.in {
-			os.Stdout.Write(message.Payload)
-			os.Stdout.Sync()
-		}
-
-		close(m.out)
-		m.sync.Done()
-	}()
-}
-
-func (m Stdout) Wait() {
-	m.sync.Wait()
-}
-
-func (m *Stdout) In(in chan *Message) (chan *Message) {
-	m.in = in
-
-	return in
-}
-
-func (m *Stdout) Out(out chan *Message) (chan *Message) {
-	m.out = out
-
-	return out
-}
-
 func NewStdout() (Module) {
-	return &Stdout{
-		sync: &sync.WaitGroup{},
-	}
+	return &Stdout{}
 }
 
-func (m Stdout) SetFlagSet(fs *pflag.FlagSet) {}
+func (m Stdout) SetFlagSet(fs *pflag.FlagSet, args []string) {}

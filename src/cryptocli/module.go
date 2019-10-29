@@ -10,30 +10,13 @@ import (
 
 var MODULELIST = NewModuleList()
 
-// Order is: In(), Out(), Init(), Start(), Wait()
 type Module interface {
 	// Initialize module's configuration, throwing errors
 	// if there is something wrong
-	Init(*GlobalFlags) (error)
+	// Init should not be blocking
+	Init(in, out chan *Message, flags *GlobalFlags) (err error)
 
-	// Start reading and writing on in and out. Typically
-	// this is where you spawn your go routing.
-	// Must not be blocking 
-	Start()
-
-	// Block until everything has been drained. This includes
-	// your in channel as well as any IO operation you might
-	// have started
-	Wait()
-
-	// The caller will give you a channel you can use. This is
-	// using default configuration on the buffering size.
-	// The caller will use whatever you give back, so feel
-	// free to just return the parameter or generate your own.
-	In(chan *Message) (chan *Message)
-	Out(chan *Message) (chan *Message)
-
-	SetFlagSet(*pflag.FlagSet)
+	SetFlagSet(flags *pflag.FlagSet, args []string)
 }
 
 type Modules struct {

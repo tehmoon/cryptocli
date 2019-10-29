@@ -66,84 +66,7 @@ type AESGCMFlags struct {
 	decrypt bool
 }
 
-// Don't close out when you are done
-func aesGCMEncrypt(in, out chan *Message, aead cipher.AEAD) (err error) {
-	nonceLength := 8
-	nonce, err := NewAESNonce(nonceLength, rand.Reader)
-	if err != nil {
-		return errors.Wrap(err, "Error generating nonce in aes module")
-	}
-
-	SendMessage(nonce.Nonce()[:nonceLength], out)
-
-	l := make([]byte, 4)
-
-	for message := range in {
-		if len(message.Payload) == 0 {
-			continue
-		}
-
-		binary.LittleEndian.PutUint32(l, uint32(len(message.Payload)))
-
-		payload := aead.Seal(nil, nonce.Nonce(), message.Payload, l)
-		SendMessage(append(l, payload...), out)
-
-		rotate, err := nonce.Increment()
-		if err != nil {
-			return errors.Wrap(err, "Error incrementing nonce in aes module")
-		}
-
-		if rotate {
-			SendMessage(nonce.Nonce()[:nonceLength], out)
-		}
-	}
-
-	return nil
-}
-
-// Don't close out when you are done
-func aesGCMDecrypt(in, out chan *Message, aead cipher.AEAD, reader io.ReadCloser) (err error) {
-	defer reader.Close()
-
-	nonceLength := 8
-	l := make([]byte, 4)
-
-	nonce, err := NewAESNonce(nonceLength, reader)
-	if err != nil {
-		return errors.Wrap(err, "Error generating nonce in aes module")
-	}
-
-	for {
-		_, err = io.ReadFull(reader, l)
-		if err != nil {
-			return errors.Wrap(err, "Error reading length in aes module")
-		}
-
-		i := binary.LittleEndian.Uint32(l)
-
-		payload := make([]byte, i + 16)
-		_, err = io.ReadFull(reader, payload)
-		if err != nil {
-			return errors.Wrap(err, "Error reading encrypted payload in aes module")
-		}
-
-		plaintext, err := aead.Open(nil, nonce.Nonce(), payload, l)
-		if err != nil {
-			return errors.Wrap(err, "Error decrypting the payload")
-		}
-
-		SendMessage(plaintext, out)
-
-		_, err = nonce.Increment()
-		if err != nil {
-			return errors.Wrap(err, "Error incrementing nonce in aes module")
-		}
-	}
-
-	return nil
-}
-
-func (m *AESGCM) Init(global *GlobalFlags) (err error) {
+func (m *AESGCM) Init(in, out chan *Message, global *GlobalFlags) (err error) {
 	if (! m.flags.decrypt && ! m.flags.encrypt) || (m.flags.decrypt && m.flags.encrypt) {
 		return errors.Errorf("One of %q or %q is required in aes module", "encrypt", "decrypt")
 	}
@@ -170,94 +93,190 @@ func (m *AESGCM) Init(global *GlobalFlags) (err error) {
 		m.flags.keyLen = 256
 	}
 
+	go func(in, out chan *Message) {
+		wg := &sync.WaitGroup{}
+
+		LOOP: for message := range in {
+			switch message.Type {
+				case MessageTypeTerminate:
+					wg.Wait()
+					out <- message
+					break LOOP
+				case MessageTypeChannel:
+					inc, ok := message.Interface.(MessageChannel)
+					if ok {
+						outc := make(MessageChannel)
+
+						out <- &Message{
+							Type: MessageTypeChannel,
+							Interface: outc,
+						}
+						wg.Add(1)
+						if m.flags.encrypt {
+							go startAesGCMEncrypt(inc, outc, m, wg)
+						}	else {
+							go startAesGCMDecrypt(inc, outc, m, wg)
+						}
+					}
+
+			}
+		}
+
+		wg.Wait()
+		// Last message will signal the closing of the channel
+		<- in
+		close(out)
+	}(in, out)
+
 	return nil
 }
 
-func (m AESGCM) Start() {
-	m.wg.Add(1)
+func startAesGCMDecrypt(inc, outc MessageChannel, m *AESGCM, wg *sync.WaitGroup) {
+	defer wg.Done()
+	defer DrainChannel(inc, nil)
+	defer close(outc)
 
-	go func() {
-		defer m.wg.Done()
-		defer close(m.out)
+	salt := make([]byte, 12)
+	reader := NewMessageReader(inc)
+	defer reader.Close()
+	_, err := io.ReadFull(reader, salt)
+	if err != nil {
+		err = errors.Wrap(err, "Error reading salt in aes module")
+		log.Println(err.Error())
+		return
+	}
 
-		salt := make([]byte, 12)
-		var reader io.ReadCloser
+	key, err := AESGCMDeriveKey(salt, m.password, m.flags.keyLen / 8)
+	if err != nil {
+		err = errors.Wrap(err, "Error derivating key in aes module")
+		log.Println(err.Error())
+		return
+	}
 
-		if m.flags.encrypt {
-			err := AESGCMGenerateSalt(salt)
-			if err != nil {
-				log.Println(errors.Wrap(err, "Error generating salt in aes module").Error())
-				return
-			}
+	aead, err := NewAESAEAD(key)
+	if err != nil {
+		err = errors.Wrap(err, "Error creating aead object")
+		log.Println(err.Error())
+		return
+	}
 
-			SendMessage(salt, m.out)
-		} else {
-			reader = NewMessageReader(m.in)
-			_, err := io.ReadFull(reader, salt)
-			if err != nil {
-				log.Println(errors.Wrap(err, "Error reading salt in aes module"))
-				return
-			}
-		}
+	nonceLength := 8
+	l := make([]byte, 4)
 
-		key, err := AESGCMDeriveKey(salt, m.password, m.flags.keyLen / 8)
+	nonce, err := NewAESNonce(nonceLength, reader)
+	if err != nil {
+		err = errors.Wrap(err, "Error generating nonce in aes module")
+		log.Println(err.Error())
+		return
+	}
+
+	for {
+		_, err = io.ReadFull(reader, l)
 		if err != nil {
-			log.Println(errors.Wrap(err, "Error derivating key in aes module").Error())
-			return
-		}
-
-		aead, err := NewAESAEAD(key)
-		if err != nil {
+			err = errors.Wrap(err, "Error reading length in aes module")
 			log.Println(err.Error())
 			return
 		}
 
-		if m.flags.encrypt {
-			err := aesGCMEncrypt(m.in, m.out, aead)
-			if err != nil {
-				log.Println(err.Error())
-			}
+		i := binary.LittleEndian.Uint32(l)
+
+		payload := make([]byte, i + 16 /* 16 is the tag */)
+		_, err = io.ReadFull(reader, payload)
+		if err != nil {
+			err = errors.Wrap(err, "Error reading encrypted payload in aes module")
+			log.Println(err.Error())
 			return
 		}
 
-		if m.flags.decrypt {
-			err := aesGCMDecrypt(m.in, m.out, aead, reader)
-			if err != nil {
-				log.Println(err.Error())
-			}
+		plaintext, err := aead.Open(nil, nonce.Nonce(), payload, l)
+		if err != nil {
+			err = errors.Wrap(err, "Error decrypting the payload")
+			log.Println(err.Error())
 			return
 		}
 
-		log.Fatal("Code path should not have been reached in aes module")
-	}()
+		outc <- plaintext
+
+		_, err = nonce.Increment()
+		if err != nil {
+			err = errors.Wrap(err, "Error incrementing nonce in aes module")
+			log.Println(err.Error())
+			return
+		}
+	}
 }
 
-func (m AESGCM) Wait() {
-	m.wg.Wait()
+func startAesGCMEncrypt(inc, outc MessageChannel, m *AESGCM, wg *sync.WaitGroup) {
+	defer wg.Done()
+	defer DrainChannel(inc, nil)
+	defer close(outc)
 
-	for range m.in {}
-}
+	salt := make([]byte, 12)
+	err := AESGCMGenerateSalt(salt)
+	if err != nil {
+		err = errors.Wrap(err, "Error generating salt in aes module")
+		log.Println(err.Error())
+		return
+	}
 
-func (m *AESGCM) In(in chan *Message) (chan *Message) {
-	m.in = in
+	outc <- salt
 
-	return in
-}
+	key, err := AESGCMDeriveKey(salt, m.password, m.flags.keyLen / 8)
+	if err != nil {
+		err = errors.Wrap(err, "Error derivating key in aes module")
+		log.Println(err.Error())
+		return
+	}
 
-func (m *AESGCM) Out(out chan *Message) (chan *Message) {
-	m.out = out
+	aead, err := NewAESAEAD(key)
+	if err != nil {
+		err = errors.Wrap(err, "Error creating aead object")
+		log.Println(err.Error())
+		return
+	}
 
-	return out
+	nonceLength := 8
+	nonce, err := NewAESNonce(nonceLength, rand.Reader)
+	if err != nil {
+		err = errors.Wrap(err, "Error generating nonce in aes module")
+		log.Println(err.Error())
+		return
+	}
+
+	outc <- nonce.Nonce()[:nonceLength]
+
+	l := make([]byte, 4)
+
+	for payload := range inc {
+		if len(payload) == 0 {
+			continue
+		}
+
+		binary.LittleEndian.PutUint32(l, uint32(len(payload)))
+
+		payload = aead.Seal(nil, nonce.Nonce(), payload, l)
+		outc <- append(l, payload...)
+
+		rotate, err := nonce.Increment()
+		if err != nil {
+			err = errors.Wrap(err, "Error incrementing nonce in aes module")
+			log.Println(err.Error())
+			break
+		}
+
+		if rotate {
+			outc <- nonce.Nonce()[:nonceLength]
+		}
+	}
 }
 
 func NewAESGCM() (Module) {
 	return &AESGCM{
-		wg: &sync.WaitGroup{},
 		flags: AESGCMFlags{},
 	}
 }
 
-func (m *AESGCM) SetFlagSet(fs *pflag.FlagSet) {
+func (m *AESGCM) SetFlagSet(fs *pflag.FlagSet, args []string) {
 	fs.BoolVar(&m.flags.encrypt, "encrypt", false, "Encrypt")
 	fs.BoolVar(&m.flags.decrypt, "decrypt", false, "Decrypt")
 	fs.BoolVar(&m.flags.half, "128", true, "128 bits key")
