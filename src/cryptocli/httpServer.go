@@ -50,16 +50,27 @@ func HTTPServerHandleResponse(m *HTTPServer, w http.ResponseWriter, req *http.Re
 
 	w.WriteHeader(200)
 
-	for payload := range inc {
-		_, err := w.Write(payload)
-		if err != nil {
-			err = errors.Wrap(err, "Error writing to http connect")
-			log.Println(err.Error())
-			return
-		}
+	for {
+		select {
+			case payload, opened := <- inc:
+				if ! opened {
+					return
+				}
 
-		if f, ok := w.(http.Flusher); ok {
-			f.Flush()
+				log.Println("inc triggered")
+				_, err := w.Write(payload)
+				if err != nil {
+					err = errors.Wrap(err, "Error writing to http connect")
+					log.Println(err.Error())
+					return
+				}
+
+				if f, ok := w.(http.Flusher); ok {
+					f.Flush()
+				}
+			case <- req.Context().Done():
+				log.Println("Connection got closed")
+				return
 		}
 	}
 }
