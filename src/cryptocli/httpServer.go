@@ -102,7 +102,6 @@ func HTTPServerHandleResponse(m *HTTPServer, w http.ResponseWriter, req *http.Re
 					return
 				}
 
-				log.Println("inc triggered")
 				_, err := w.Write(payload)
 				if err != nil {
 					err = errors.Wrap(err, "Error writing to http connect")
