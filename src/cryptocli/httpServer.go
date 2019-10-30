@@ -160,9 +160,13 @@ func HTTPServerHandler(m *HTTPServer, relayer chan *HTTPServerRelayer, connc, do
 	}
 }
 
-func HTTPServerRouter(m *HTTPServer, cb func(w http.ResponseWriter, r *http.Request)) func (w http.ResponseWriter, r *http.Request) {
-	return func (w http.ResponseWriter, r *http.Request) {
-		if m.formUpload {
+type HTTPServerHandle struct {
+	cb http.HandlerFunc
+	m *HTTPServer
+}
+
+func (h *HTTPServerHandle) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+		if h.m.formUpload {
 			switch r.Method {
 				case "GET":
 					if r.URL.Path == "/" {
@@ -174,7 +178,7 @@ func HTTPServerRouter(m *HTTPServer, cb func(w http.ResponseWriter, r *http.Requ
 					w.WriteHeader(200)
 				case "POST":
 					if r.URL.Path == "/" {
-						cb(w, r)
+						h.cb(w, r)
 						return
 					}
 
@@ -186,7 +190,14 @@ func HTTPServerRouter(m *HTTPServer, cb func(w http.ResponseWriter, r *http.Requ
 			return
 		}
 
-		cb(w, r)
+	h.cb(w, r)
+	return
+}
+
+func NewHTTPServerHandle(m *HTTPServer, cb http.HandlerFunc) (http.Handler) {
+	return &HTTPServerHandle{
+		cb: cb,
+		m: m,
 	}
 }
 
@@ -232,7 +243,7 @@ func (m *HTTPServer) Init(in, out chan *Message, global *GlobalFlags) (error) {
 		connc := make(chan struct{})
 
 		mux := http.NewServeMux()
-		mux.HandleFunc("/", HTTPServerRouter(m, HTTPServerHandler(m, relayer, connc, donec, cancel)))
+		mux.Handle("/", NewHTTPServerHandle(m, HTTPServerHandler(m, relayer, connc, donec, cancel)))
 
 		server := &http.Server{
 			Handler: mux,
