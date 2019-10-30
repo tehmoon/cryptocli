@@ -22,10 +22,27 @@ type HTTPServer struct {
 	readHeaderTimeout time.Duration
 	idleTimeout time.Duration
 	readTimeout time.Duration
+	formUpload bool
 }
+
+var HTTPServerFormUploadPage = []byte(`
+ <html>
+ <title>Cryptocli http-server </title>
+ <body>
+
+ <form action="/" method="post" enctype="multipart/form-data">
+ <label for="file">Filenames:</label>
+ <input type="file" name="file" id="file">
+ <input type="submit" name="submit" value="Submit">
+ </form>
+
+ </body>
+ </html>
+`)
 
 func (m *HTTPServer) SetFlagSet(fs *pflag.FlagSet, args []string) {
 	fs.StringVar(&m.addr, "addr", "", "Listen on an address")
+	fs.BoolVar(&m.formUpload, "file-upload", false, "Serve a HTML page on GET / and a file upload endpoint on POST /")
 	fs.DurationVar(&m.connectTimeout, "connect-timeout", 30 * time.Second, "Max amount of time to wait for a potential connection when pipeline is closing")
 	fs.DurationVar(&m.writeTimeout, "write-timeout", 15 * time.Second, "Set maximum duration before timing out writes of the response")
 	fs.DurationVar(&m.readTimeout, "read-timeout", 15 * time.Second, "Set the maximum duration for reading the entire request, including the body.")
@@ -38,6 +55,28 @@ func HTTPServerHandleResponse(m *HTTPServer, w http.ResponseWriter, req *http.Re
 	defer wg.Done()
 	defer DrainChannel(inc, nil)
 	defer close(outc)
+
+	if m.formUpload {
+		file, _, err := req.FormFile("file")
+		if err != nil {
+			err = errors.Wrap(err, "Error reading from form")
+			log.Println(err.Error())
+			w.WriteHeader(500)
+			return
+		}
+
+		err = ReadBytesSendMessages(file, outc)
+		if err != nil && err != io.EOF {
+			err = errors.Wrap(err, "Error reading form file")
+			log.Println(err.Error())
+			w.WriteHeader(500)
+			return
+		}
+
+		w.WriteHeader(200)
+		w.Write([]byte(`uploaded`))
+		return
+	}
 
 	if req.Body != nil {
 		err := ReadBytesSendMessages(req.Body, outc)
@@ -121,6 +160,36 @@ func HTTPServerHandler(m *HTTPServer, relayer chan *HTTPServerRelayer, connc, do
 	}
 }
 
+func HTTPServerRouter(m *HTTPServer, cb func(w http.ResponseWriter, r *http.Request)) func (w http.ResponseWriter, r *http.Request) {
+	return func (w http.ResponseWriter, r *http.Request) {
+		if m.formUpload {
+			switch r.Method {
+				case "GET":
+					if r.URL.Path == "/" {
+						w.Header().Add("Content-Type", "text/html")
+						w.Write(HTTPServerFormUploadPage)
+						return
+					}
+
+					w.WriteHeader(200)
+				case "POST":
+					if r.URL.Path == "/" {
+						cb(w, r)
+						return
+					}
+
+					w.WriteHeader(200)
+				default:
+					w.WriteHeader(200)
+			}
+
+			return
+		}
+
+		cb(w, r)
+	}
+}
+
 func (m *HTTPServer) Init(in, out chan *Message, global *GlobalFlags) (error) {
 	if m.connectTimeout < 1 {
 		return errors.Errorf("Flag %q cannot be negative or zero", "--connect-timeout")
@@ -163,7 +232,7 @@ func (m *HTTPServer) Init(in, out chan *Message, global *GlobalFlags) (error) {
 		connc := make(chan struct{})
 
 		mux := http.NewServeMux()
-		mux.HandleFunc("/", HTTPServerHandler(m, relayer, connc, donec, cancel))
+		mux.HandleFunc("/", HTTPServerRouter(m, HTTPServerHandler(m, relayer, connc, donec, cancel)))
 
 		server := &http.Server{
 			Handler: mux,
