@@ -166,32 +166,40 @@ type HTTPServerHandle struct {
 }
 
 func (h *HTTPServerHandle) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-		if h.m.formUpload {
-			switch r.Method {
-				case "GET":
-					if r.URL.Path == "/" {
-						w.Header().Add("Content-Type", "text/html")
-						w.Write(HTTPServerFormUploadPage)
-						return
-					}
+		switch true {
+			case h.m.formUpload:
+				switch r.Method {
+					case "GET":
+						if r.URL.Path == "/" {
+							w.Header().Add("Content-Type", "text/html")
+							w.Write(HTTPServerFormUploadPage)
+							return
+						}
 
-					w.WriteHeader(200)
-				case "POST":
-					if r.URL.Path == "/" {
+						w.WriteHeader(404)
+						return
+					case "POST":
+						if r.URL.Path == "/" {
+							h.cb(w, r)
+							return
+						}
+
+						w.WriteHeader(404)
+						return
+					default:
+						w.WriteHeader(404)
+						return
+				}
+			default:
+				switch r.Method {
+					case "GET":
 						h.cb(w, r)
 						return
-					}
-
-					w.WriteHeader(200)
-				default:
-					w.WriteHeader(200)
-			}
-
-			return
+					default:
+						w.WriteHeader(404)
+						return
+				}
 		}
-
-	h.cb(w, r)
-	return
 }
 
 func NewHTTPServerHandle(m *HTTPServer, cb http.HandlerFunc) (http.Handler) {
