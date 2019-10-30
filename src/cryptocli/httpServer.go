@@ -233,6 +233,10 @@ func (m *HTTPServer) Init(in, out chan *Message, global *GlobalFlags) (error) {
 		return errors.Errorf("Flag %q cannot be negative or zero", "--write-timeout")
 	}
 
+	if m.addr == "" {
+		return errors.Errorf("Missing flag %q", "--addr")
+	}
+
 	addr, err := net.ResolveTCPAddr("tcp", m.addr)
 	if err != nil {
 		return errors.Wrap(err, "Unable to resolve tcp address")
