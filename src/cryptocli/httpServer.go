@@ -9,6 +9,7 @@ import (
 	"log"
 	"net"
 	"io"
+	"path"
 )
 
 func init() {
@@ -23,6 +24,7 @@ type HTTPServer struct {
 	idleTimeout time.Duration
 	readTimeout time.Duration
 	formUpload bool
+	redirect string
 }
 
 var HTTPServerFormUploadPage = []byte(`
@@ -48,6 +50,7 @@ func (m *HTTPServer) SetFlagSet(fs *pflag.FlagSet, args []string) {
 	fs.DurationVar(&m.readTimeout, "read-timeout", 15 * time.Second, "Set the maximum duration for reading the entire request, including the body.")
 	fs.DurationVar(&m.readHeaderTimeout, "read-headers-timeout", 15 * time.Second, "Set the amount of time allowed to read request headers.")
 	fs.DurationVar(&m.idleTimeout, "iddle-timeout", 5 * time.Second, "IdleTimeout is the maximum amount of time to wait for the next request when keep-alives are enabled")
+	fs.StringVar(&m.redirect, "redirect-to", "", "Redirect the request to where the download can begin")
 }
 
 func HTTPServerHandleResponse(m *HTTPServer, w http.ResponseWriter, req *http.Request, relay *HTTPServerRelayer) {
@@ -55,6 +58,9 @@ func HTTPServerHandleResponse(m *HTTPServer, w http.ResponseWriter, req *http.Re
 	defer wg.Done()
 	defer DrainChannel(inc, nil)
 	defer close(outc)
+
+	w.Header().Add("Content-Type", "application/octet-stream")
+	w.Header().Add("Content-Disposition", "attachment;")
 
 	if m.formUpload {
 		file, _, err := req.FormFile("file")
@@ -166,32 +172,56 @@ type HTTPServerHandle struct {
 }
 
 func (h *HTTPServerHandle) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-		if h.m.formUpload {
-			switch r.Method {
-				case "GET":
-					if r.URL.Path == "/" {
-						w.Header().Add("Content-Type", "text/html")
-						w.Write(HTTPServerFormUploadPage)
-						return
-					}
+		switch true {
+			case h.m.redirect != "":
+				switch r.Method {
+					case "GET":
+						endpoint := path.Join("/", h.m.redirect)
+						if r.URL.Path == endpoint {
+							h.cb(w, r)
+							return
+						}
 
-					w.WriteHeader(200)
-				case "POST":
-					if r.URL.Path == "/" {
+						w.Header().Add("Location", endpoint)
+						w.WriteHeader(302)
+						return
+					default:
+						w.WriteHeader(404)
+						return
+				}
+			case h.m.formUpload:
+				switch r.Method {
+					case "GET":
+						if r.URL.Path == "/" {
+							w.Header().Add("Content-Type", "text/html")
+							w.Write(HTTPServerFormUploadPage)
+							return
+						}
+
+						w.WriteHeader(404)
+						return
+					case "POST":
+						if r.URL.Path == "/" {
+							h.cb(w, r)
+							return
+						}
+
+						w.WriteHeader(404)
+						return
+					default:
+						w.WriteHeader(404)
+						return
+				}
+			default:
+				switch r.Method {
+					case "GET":
 						h.cb(w, r)
 						return
-					}
-
-					w.WriteHeader(200)
-				default:
-					w.WriteHeader(200)
-			}
-
-			return
+					default:
+						w.WriteHeader(404)
+						return
+				}
 		}
-
-	h.cb(w, r)
-	return
 }
 
 func NewHTTPServerHandle(m *HTTPServer, cb http.HandlerFunc) (http.Handler) {
@@ -220,6 +250,14 @@ func (m *HTTPServer) Init(in, out chan *Message, global *GlobalFlags) (error) {
 
 	if m.writeTimeout < 1 {
 		return errors.Errorf("Flag %q cannot be negative or zero", "--write-timeout")
+	}
+
+	if m.redirect != "" && m.formUpload {
+		return errors.Errorf("Flag %q and flag %q are mutually exclusive", "--redirect-to", "--file-upload")
+	}
+
+	if m.addr == "" {
+		return errors.Errorf("Missing flag %q", "--addr")
 	}
 
 	addr, err := net.ResolveTCPAddr("tcp", m.addr)
