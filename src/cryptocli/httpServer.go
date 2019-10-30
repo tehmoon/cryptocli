@@ -56,6 +56,9 @@ func HTTPServerHandleResponse(m *HTTPServer, w http.ResponseWriter, req *http.Re
 	defer DrainChannel(inc, nil)
 	defer close(outc)
 
+	w.Header().Add("Content-Type", "application/octet-stream")
+	w.Header().Add("Content-Disposition", "attachment;")
+
 	if m.formUpload {
 		file, _, err := req.FormFile("file")
 		if err != nil {
