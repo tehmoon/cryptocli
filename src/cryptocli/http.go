@@ -169,6 +169,18 @@ func httpStartHandler(m *HTTP, inc, outc MessageChannel, data bool, wg *sync.Wai
 
 	goahead.Wait()
 
+	client := &http.Client{
+		Timeout: m.readTimeout,
+		Transport: httpCreateTransport(m.insecure),
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) > 0 {
+				return errors.New("Unsupported redirect")
+			}
+
+			return nil
+		},
+	}
+
 	req, err := http.NewRequest(m.method, m.url, reader)
 	if err != nil {
 		err = errors.Wrap(err, "Error creating new request")
@@ -183,11 +195,6 @@ func httpStartHandler(m *HTTP, inc, outc MessageChannel, data bool, wg *sync.Wai
 
 	headers := ParseHTTPHeaders(m.headers)
 	req.Host = headers.Get("host")
-
-	client := &http.Client{
-		Timeout: m.readTimeout,
-		Transport: httpCreateTransport(m.insecure),
-	}
 
 	resp, err := client.Do(req)
 	if err != nil {
