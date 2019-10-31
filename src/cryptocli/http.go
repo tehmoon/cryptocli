@@ -204,6 +204,8 @@ func httpStartHandler(m *HTTP, inc, outc MessageChannel, data bool, wg *sync.Wai
 		return
 	}
 
+	log.Printf("Response status is %q\n", resp.Status)
+
 	close(cancel)
 
 	if resp.Body == nil {

@@ -297,6 +297,8 @@ func (m *HTTPServer) Init(in, out chan *Message, global *GlobalFlags) (error) {
 		return errors.Wrap(err, "Unable to listen on tcp address")
 	}
 
+	log.Printf("HTTP Server is listening on address: %q\n", addr.String())
+
 	go func() {
 		wg := &sync.WaitGroup{}
 		relayer := make(chan *HTTPServerRelayer)
