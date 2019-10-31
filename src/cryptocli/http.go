@@ -147,7 +147,7 @@ func httpStartHandler(m *HTTP, inc, outc MessageChannel, data bool, wg *sync.Wai
 					return
 				case payload, opened := <- inc:
 					if ! signaled {
-						goahead.Done()
+						go goahead.Done()
 						signaled = true
 					}
 
