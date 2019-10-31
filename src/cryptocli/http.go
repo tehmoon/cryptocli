@@ -22,6 +22,8 @@ type HTTP struct {
 	headers []string
 	method string
 	data bool
+	user string
+	password string
 }
 
 func (m *HTTP) SetFlagSet(fs *pflag.FlagSet, args []string) {
@@ -31,11 +33,21 @@ func (m *HTTP) SetFlagSet(fs *pflag.FlagSet, args []string) {
 	fs.StringVar(&m.method, "method", "GET", "HTTP Verb")
 	fs.StringArrayVar(&m.headers, "header", make([]string, 0), "Set header in the form of \"header: value\"")
 	fs.BoolVar(&m.data, "data", false, "Read data from the stream and send it before reading the response")
+	fs.StringVar(&m.user, "user", "", "Specify the required user for basic auth")
+	fs.StringVar(&m.password, "password", "", "Specify the required password for basic auth")
 }
 
 func (m *HTTP) Init(in, out chan *Message, global *GlobalFlags) (error) {
 	if m.readTimeout <= 0 {
 		return errors.Errorf("Flag %q has to be greater that 0", "--read-timeout")
+	}
+
+	if m.user != "" && m.password == "" {
+		return errors.Errorf("Flag %q is required when %q is set", "--password", "--user")
+	}
+
+	if m.user == "" && m.password != "" {
+		return errors.Errorf("Flag %q is required when %q is set", "--user", "--password")
 	}
 
 	go func(in, out chan *Message) {
@@ -135,7 +147,7 @@ func httpStartHandler(m *HTTP, inc, outc MessageChannel, data bool, wg *sync.Wai
 					return
 				case payload, opened := <- inc:
 					if ! signaled {
-						goahead.Done()
+						go goahead.Done()
 						signaled = true
 					}
 
@@ -157,6 +169,18 @@ func httpStartHandler(m *HTTP, inc, outc MessageChannel, data bool, wg *sync.Wai
 
 	goahead.Wait()
 
+	client := &http.Client{
+		Timeout: m.readTimeout,
+		Transport: httpCreateTransport(m.insecure),
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) > 0 {
+				return errors.New("Unsupported redirect")
+			}
+
+			return nil
+		},
+	}
+
 	req, err := http.NewRequest(m.method, m.url, reader)
 	if err != nil {
 		err = errors.Wrap(err, "Error creating new request")
@@ -165,13 +189,12 @@ func httpStartHandler(m *HTTP, inc, outc MessageChannel, data bool, wg *sync.Wai
 		return
 	}
 
+	if m.user != "" && m.password != "" {
+		req.SetBasicAuth(m.user, m.password)
+	}
+
 	headers := ParseHTTPHeaders(m.headers)
 	req.Host = headers.Get("host")
-
-	client := &http.Client{
-		Timeout: m.readTimeout,
-		Transport: httpCreateTransport(m.insecure),
-	}
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -180,6 +203,8 @@ func httpStartHandler(m *HTTP, inc, outc MessageChannel, data bool, wg *sync.Wai
 		close(cancel)
 		return
 	}
+
+	log.Printf("Response status is %q\n", resp.Status)
 
 	close(cancel)
 

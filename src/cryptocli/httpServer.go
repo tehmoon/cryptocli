@@ -25,6 +25,8 @@ type HTTPServer struct {
 	readTimeout time.Duration
 	formUpload bool
 	redirect string
+	user string
+	password string
 }
 
 var HTTPServerFormUploadPage = []byte(`
@@ -50,6 +52,8 @@ func (m *HTTPServer) SetFlagSet(fs *pflag.FlagSet, args []string) {
 	fs.DurationVar(&m.readTimeout, "read-timeout", 15 * time.Second, "Set the maximum duration for reading the entire request, including the body.")
 	fs.DurationVar(&m.readHeaderTimeout, "read-headers-timeout", 15 * time.Second, "Set the amount of time allowed to read request headers.")
 	fs.DurationVar(&m.idleTimeout, "iddle-timeout", 5 * time.Second, "IdleTimeout is the maximum amount of time to wait for the next request when keep-alives are enabled")
+	fs.StringVar(&m.user, "user", "", "Specify the required user for basic auth")
+	fs.StringVar(&m.password, "password", "", "Specify the required password for basic auth")
 	fs.StringVar(&m.redirect, "redirect-to", "", "Redirect the request to where the download can begin")
 }
 
@@ -58,9 +62,6 @@ func HTTPServerHandleResponse(m *HTTPServer, w http.ResponseWriter, req *http.Re
 	defer wg.Done()
 	defer DrainChannel(inc, nil)
 	defer close(outc)
-
-	w.Header().Add("Content-Type", "application/octet-stream")
-	w.Header().Add("Content-Disposition", "attachment;")
 
 	if m.formUpload {
 		file, _, err := req.FormFile("file")
@@ -83,6 +84,9 @@ func HTTPServerHandleResponse(m *HTTPServer, w http.ResponseWriter, req *http.Re
 		w.Write([]byte(`uploaded`))
 		return
 	}
+
+	w.Header().Add("Content-Type", "application/octet-stream")
+	w.Header().Add("Content-Disposition", "attachment;")
 
 	if req.Body != nil {
 		err := ReadBytesSendMessages(req.Body, outc)
@@ -171,6 +175,22 @@ type HTTPServerHandle struct {
 }
 
 func (h *HTTPServerHandle) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+		if h.m.user != "" && h.m.password != "" {
+			user, password, found := r.BasicAuth()
+			if ! found {
+				w.Header().Add("WWW-Authenticate", "Basic realm=cryptocli")
+				w.WriteHeader(401)
+				return
+			}
+
+			if h.m.user != user || h.m.password != password {
+				w.Header().Add("WWW-Authenticate", "Basic realm=cryptocli")
+				w.WriteHeader(401)
+				w.Write([]byte(`Unauthorized access`))
+				return
+			}
+		}
+
 		switch true {
 			case h.m.redirect != "":
 				switch r.Method {
@@ -231,6 +251,14 @@ func NewHTTPServerHandle(m *HTTPServer, cb http.HandlerFunc) (http.Handler) {
 }
 
 func (m *HTTPServer) Init(in, out chan *Message, global *GlobalFlags) (error) {
+	if m.user != "" && m.password == "" {
+		return errors.Errorf("Flag %q is required when %q is set", "--password", "--user")
+	}
+
+	if m.user == "" && m.password != "" {
+		return errors.Errorf("Flag %q is required when %q is set", "--user", "--password")
+	}
+
 	if m.connectTimeout < 1 {
 		return errors.Errorf("Flag %q cannot be negative or zero", "--connect-timeout")
 	}
@@ -268,6 +296,8 @@ func (m *HTTPServer) Init(in, out chan *Message, global *GlobalFlags) (error) {
 	if err != nil {
 		return errors.Wrap(err, "Unable to listen on tcp address")
 	}
+
+	log.Printf("HTTP Server is listening on address: %q\n", addr.String())
 
 	go func() {
 		wg := &sync.WaitGroup{}
