@@ -24,9 +24,13 @@ type WebsocketServer struct {
 	mode int
 	text bool
 	headers []string
+	showClientHeaders bool
+	showServerHeaders bool
 }
 
 func (m *WebsocketServer) SetFlagSet(fs *pflag.FlagSet, args []string) {
+	fs.BoolVar(&m.showClientHeaders, "show-client-headers", false, "Show client headers in the logs")
+	fs.BoolVar(&m.showServerHeaders, "show-server-headers", false, "Show server headers in the logs")
 	fs.StringVar(&m.addr, "addr", "", "Listen on an address")
 	fs.StringArrayVar(&m.headers, "header", make([]string, 0), "Set header in the form of \"header: value\"")
 	fs.DurationVar(&m.connectTimeout, "connect-timeout", 30 * time.Second, "Max amount of time to wait for a potential connection when pipeline is closing")
@@ -45,7 +49,11 @@ func websocketServerUpgrade(m *WebsocketServer, w http.ResponseWriter, req *http
 		return true
 	}
 
-	conn, err := upgrader.Upgrade(w, req, ParseHTTPHeaders(m.headers))
+	headers := ParseHTTPHeaders(m.headers)
+	conn, err := upgrader.Upgrade(w, req, headers)
+	if m.showServerHeaders {
+		ShowHTTPServerHeaders(headers)
+	}
 	if err != nil {
 		err = errors.Wrap(err, "Fail to upgrade to websocket")
 		log.Println(err.Error())
@@ -118,6 +126,10 @@ func websocketServerUpgrade(m *WebsocketServer, w http.ResponseWriter, req *http
 
 func websocketServerHandle(m *WebsocketServer, relayer chan *WebsocketServerRelayer, connc, donec, cancel chan struct{}) (func(w http.ResponseWriter, r *http.Request)) {
 	return func(w http.ResponseWriter, req *http.Request) {
+		if m.showClientHeaders {
+			ShowHTTPClientHeaders(req.Header)
+		}
+
 		donec <- struct{}{}
 
 		defer func(donec chan struct{}) {
@@ -127,10 +139,16 @@ func websocketServerHandle(m *WebsocketServer, relayer chan *WebsocketServerRela
 		select {
 			case <- cancel:
 				w.WriteHeader(500)
+				if m.showServerHeaders {
+					ShowHTTPServerHeaders(w.Header())
+				}
 				return
 			case relay, opened := <- relayer:
 				if ! opened {
 					w.WriteHeader(500)
+					if m.showServerHeaders {
+						ShowHTTPServerHeaders(w.Header())
+					}
 					return
 				}
 
@@ -143,6 +161,9 @@ func websocketServerHandle(m *WebsocketServer, relayer chan *WebsocketServerRela
 			case connc <- struct{}{}:
 			case <- cancel:
 				w.WriteHeader(500)
+				if m.showServerHeaders {
+					ShowHTTPServerHeaders(w.Header())
+				}
 				return
 		}
 
@@ -150,6 +171,9 @@ func websocketServerHandle(m *WebsocketServer, relayer chan *WebsocketServerRela
 			case relay, opened := <- relayer:
 				if ! opened {
 					w.WriteHeader(500)
+					if m.showServerHeaders {
+						ShowHTTPServerHeaders(w.Header())
+					}
 					return
 				}
 
@@ -157,6 +181,9 @@ func websocketServerHandle(m *WebsocketServer, relayer chan *WebsocketServerRela
 				return
 			case <- cancel:
 				w.WriteHeader(500)
+				if m.showServerHeaders {
+					ShowHTTPServerHeaders(w.Header())
+				}
 				return
 		}
 	}
