@@ -5,6 +5,7 @@ import (
 	"github.com/tehmoon/errors"
 	"os"
 	"fmt"
+	"runtime"
 )
 
 // default version when not used by the build script
@@ -24,7 +25,7 @@ func main() {
 	}
 
 	if flags.Version {
-		fmt.Fprintln(os.Stderr, VERSION)
+		fmt.Fprintf(os.Stderr, "%s %s\n", VERSION, runtime.Version())
 		os.Exit(0)
 	}
 
