@@ -21,6 +21,7 @@ GOPATH=${GOPATH} go get -u -v ./... || true
 (cd "$GOPATH/src/github.com/olivere/elastic/"; git fetch -t -f; git reset --hard origin/release-branch.v7)
 
 GOPATH=${GOPATH} go build -o cryptocli-new .
+VERSION=$(git log @ -1 --format='%H %d')
 
 compile() {
 	local GOOS=$1
@@ -28,7 +29,7 @@ compile() {
 	local DEST="cryptocli-${GOOS}-${GOARCH}"
 	local BIN="cryptocli"
 
-	GOPATH=${GOPATH} GOOS=${GOOS} GOARCH=${GOARCH} go build -tags netgo -ldflags "-extldflags \"-static\" -s -w"
+	GOPATH=${GOPATH} GOOS=${GOOS} GOARCH=${GOARCH} go build -tags netgo -ldflags "-X 'main.VERSION=${VERSION}' -extldflags \"-static\" -s -w"
 	echo "Done compiling for ${GOOS} ${GOARCH}"
 
 	[ "${GOOS}" = "windows" ] && BIN="${BIN}.exe"

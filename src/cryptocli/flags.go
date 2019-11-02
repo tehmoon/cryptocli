@@ -12,6 +12,7 @@ import (
 type Flags struct {
 	Modules *Modules
 	Global GlobalFlags
+	Version bool
 }
 
 type GlobalFlags struct {
@@ -55,6 +56,7 @@ func ParseFlags() (*Flags, error) {
 	root.BoolVar(&flags.Global.Std, "std", false, "Read from stdin and writes to stdout instead of setting both modules")
 	root.BoolVar(&flags.Global.MultiStreams, "multi-streams", false, "Enable multi streams modules. Warning, some modules might be blocked waiting for  input data that will never come")
 	root.IntVar(&flags.Global.MaxConcurrentStreams, "max-concurrent-streams", 25, "Max number of concurrent streams. Highier increase bandwidth at the cost of memory and CPU.")
+	root.BoolVar(&flags.Version, "version", false, "Show version and exits")
 	root.Usage = SetRootUsage(root)
 	err := root.Parse(os.Args[1:])
 	if err != nil {
