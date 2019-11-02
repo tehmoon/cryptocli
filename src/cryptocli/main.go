@@ -4,7 +4,11 @@ import (
 	"log"
 	"github.com/tehmoon/errors"
 	"os"
+	"fmt"
 )
+
+// default version when not used by the build script
+var VERSION = "dev"
 
 func init() {
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
@@ -17,6 +21,11 @@ func main() {
 		err = errors.Wrap(err, "Error parsing flags")
 		log.Println(err.Error())
 		os.Exit(3)
+	}
+
+	if flags.Version {
+		fmt.Fprintln(os.Stderr, VERSION)
+		os.Exit(0)
 	}
 
 	pipeline := NewPipeline()
