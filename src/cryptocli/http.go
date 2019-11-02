@@ -195,6 +195,7 @@ func httpStartHandler(m *HTTP, inc, outc MessageChannel, data bool, wg *sync.Wai
 
 	headers := ParseHTTPHeaders(m.headers)
 	req.Host = headers.Get("host")
+	req.Header = headers
 
 	resp, err := client.Do(req)
 	if err != nil {
