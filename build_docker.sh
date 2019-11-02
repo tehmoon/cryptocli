@@ -23,7 +23,11 @@ set -x
 
 image_name="tehmoon/cryptocli:${TAG}"
 
-docker build -t "${image_name}" .
+docker rmi "${image_name}" || true
+
+VERSION=$(git log @ -1 --format='%H %d')
+VERSION=${VERSION} docker build --build-arg VERSION -t "${image_name}" .
+
 docker push "${image_name}"
 
 docker images "${image_name}" >&6
