@@ -28,6 +28,8 @@ type HTTPServer struct {
 	user string
 	password string
 	headers []string
+	showClientHeaders bool
+	showServerHeaders bool
 }
 
 var HTTPServerFormUploadPage = []byte(`
@@ -46,6 +48,8 @@ var HTTPServerFormUploadPage = []byte(`
 `)
 
 func (m *HTTPServer) SetFlagSet(fs *pflag.FlagSet, args []string) {
+	fs.BoolVar(&m.showClientHeaders, "show-client-headers", false, "Show client headers in the logs")
+	fs.BoolVar(&m.showServerHeaders, "show-server-headers", false, "Show server headers in the logs")
 	fs.StringVar(&m.addr, "addr", "", "Listen on an address")
 	fs.BoolVar(&m.formUpload, "file-upload", false, "Serve a HTML page on GET / and a file upload endpoint on POST /")
 	fs.DurationVar(&m.connectTimeout, "connect-timeout", 30 * time.Second, "Max amount of time to wait for a potential connection when pipeline is closing")
@@ -71,6 +75,9 @@ func HTTPServerHandleResponse(m *HTTPServer, w http.ResponseWriter, req *http.Re
 			err = errors.Wrap(err, "Error reading from form")
 			log.Println(err.Error())
 			w.WriteHeader(500)
+			if m.showServerHeaders {
+				ShowHTTPServerHeaders(w.Header())
+			}
 			return
 		}
 
@@ -79,16 +86,25 @@ func HTTPServerHandleResponse(m *HTTPServer, w http.ResponseWriter, req *http.Re
 			err = errors.Wrap(err, "Error reading form file")
 			log.Println(err.Error())
 			w.WriteHeader(500)
+			if m.showServerHeaders {
+				ShowHTTPServerHeaders(w.Header())
+			}
 			return
 		}
 
 		w.WriteHeader(200)
 		w.Write([]byte(`uploaded`))
+		if m.showServerHeaders {
+			ShowHTTPServerHeaders(w.Header())
+		}
 		return
 	}
 
 	w.Header().Add("Content-Type", "application/octet-stream")
 	w.Header().Add("Content-Disposition", "attachment;")
+	if m.showServerHeaders {
+		ShowHTTPServerHeaders(w.Header())
+	}
 
 	if req.Body != nil {
 		err := ReadBytesSendMessages(req.Body, outc)
@@ -136,10 +152,16 @@ func HTTPServerHandler(m *HTTPServer, relayer chan *HTTPServerRelayer, connc, do
 		select {
 			case <- cancel:
 				w.WriteHeader(500)
+				if m.showServerHeaders {
+					ShowHTTPServerHeaders(w.Header())
+				}
 				return
 			case relay, opened := <- relayer:
 				if ! opened {
 					w.WriteHeader(500)
+					if m.showServerHeaders {
+						ShowHTTPServerHeaders(w.Header())
+					}
 					return
 				}
 
@@ -152,6 +174,9 @@ func HTTPServerHandler(m *HTTPServer, relayer chan *HTTPServerRelayer, connc, do
 			case connc <- struct{}{}:
 			case <- cancel:
 				w.WriteHeader(500)
+				if m.showServerHeaders {
+					ShowHTTPServerHeaders(w.Header())
+				}
 				return
 		}
 
@@ -159,6 +184,9 @@ func HTTPServerHandler(m *HTTPServer, relayer chan *HTTPServerRelayer, connc, do
 			case relay, opened := <- relayer:
 				if ! opened {
 					w.WriteHeader(500)
+					if m.showServerHeaders {
+						ShowHTTPServerHeaders(w.Header())
+					}
 					return
 				}
 
@@ -166,6 +194,9 @@ func HTTPServerHandler(m *HTTPServer, relayer chan *HTTPServerRelayer, connc, do
 				return
 			case <- cancel:
 				w.WriteHeader(500)
+				if m.showServerHeaders {
+					ShowHTTPServerHeaders(w.Header())
+				}
 				return
 		}
 	}
@@ -178,6 +209,10 @@ type HTTPServerHandle struct {
 }
 
 func (h *HTTPServerHandle) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+		if h.m.showClientHeaders {
+			ShowHTTPClientHeaders(r.Header)
+		}
+
 		headers := w.Header()
 		for k, v := range h.headers {
 			headers[k] = v
@@ -188,12 +223,18 @@ func (h *HTTPServerHandle) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if ! found {
 				w.Header().Add("WWW-Authenticate", "Basic realm=cryptocli")
 				w.WriteHeader(401)
+				if h.m.showServerHeaders {
+					ShowHTTPServerHeaders(w.Header())
+				}
 				return
 			}
 
 			if h.m.user != user || h.m.password != password {
 				w.Header().Add("WWW-Authenticate", "Basic realm=cryptocli")
 				w.WriteHeader(401)
+				if h.m.showServerHeaders {
+					ShowHTTPServerHeaders(w.Header())
+				}
 				w.Write([]byte(`Unauthorized access`))
 				return
 			}
@@ -211,9 +252,15 @@ func (h *HTTPServerHandle) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 						w.Header().Add("Location", endpoint)
 						w.WriteHeader(302)
+						if h.m.showServerHeaders {
+							ShowHTTPServerHeaders(w.Header())
+						}
 						return
 					default:
 						w.WriteHeader(404)
+						if h.m.showServerHeaders {
+							ShowHTTPServerHeaders(w.Header())
+						}
 						return
 				}
 			case h.m.formUpload:
@@ -221,6 +268,9 @@ func (h *HTTPServerHandle) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					case "GET":
 						if r.URL.Path == "/" {
 							w.Header().Add("Content-Type", "text/html")
+							if h.m.showServerHeaders {
+								ShowHTTPServerHeaders(w.Header())
+							}
 							w.Write(HTTPServerFormUploadPage)
 							return
 						}
@@ -233,9 +283,15 @@ func (h *HTTPServerHandle) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 							return
 						}
 
+						if h.m.showServerHeaders {
+							ShowHTTPServerHeaders(w.Header())
+						}
 						w.WriteHeader(404)
 						return
 					default:
+						if h.m.showServerHeaders {
+							ShowHTTPServerHeaders(w.Header())
+						}
 						w.WriteHeader(404)
 						return
 				}
@@ -245,6 +301,9 @@ func (h *HTTPServerHandle) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 						h.cb(w, r)
 						return
 					default:
+						if h.m.showServerHeaders {
+							ShowHTTPServerHeaders(w.Header())
+						}
 						w.WriteHeader(404)
 						return
 				}

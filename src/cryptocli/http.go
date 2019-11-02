@@ -24,9 +24,13 @@ type HTTP struct {
 	data bool
 	user string
 	password string
+	showClientHeaders bool
+	showServerHeaders bool
 }
 
 func (m *HTTP) SetFlagSet(fs *pflag.FlagSet, args []string) {
+	fs.BoolVar(&m.showClientHeaders, "show-client-headers", false, "Show client headers in the logs")
+	fs.BoolVar(&m.showServerHeaders, "show-server-headers", false, "Show server headers in the logs")
 	fs.StringVar(&m.url, "url", "", "HTTP server to connect to")
 	fs.BoolVar(&m.insecure, "insecure", false, "Don't verify the tls certificate chain")
 	fs.DurationVar(&m.readTimeout, "read-timeout", 15 * time.Second, "Read timeout for the tcp connection")
@@ -189,15 +193,22 @@ func httpStartHandler(m *HTTP, inc, outc MessageChannel, data bool, wg *sync.Wai
 		return
 	}
 
-	if m.user != "" && m.password != "" {
-		req.SetBasicAuth(m.user, m.password)
-	}
-
 	headers := ParseHTTPHeaders(m.headers)
 	req.Host = headers.Get("host")
 	req.Header = headers
 
+	if m.user != "" && m.password != "" {
+		req.SetBasicAuth(m.user, m.password)
+	}
+
+	if m.showClientHeaders {
+		ShowHTTPClientHeaders(req.Header)
+	}
+
 	resp, err := client.Do(req)
+	if m.showServerHeaders {
+		ShowHTTPServerHeaders(resp.Header)
+	}
 	if err != nil {
 		err = errors.Wrap(err, "Error sending request")
 		cancel <- err

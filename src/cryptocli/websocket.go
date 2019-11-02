@@ -23,9 +23,13 @@ type Websocket struct {
 	pingInterval time.Duration
 	text bool
 	mode int
+	showClientHeaders bool
+	showServerHeaders bool
 }
 
 func (m *Websocket) SetFlagSet(fs *pflag.FlagSet, args []string) {
+	fs.BoolVar(&m.showClientHeaders, "show-client-headers", false, "Show client headers in the logs")
+	fs.BoolVar(&m.showServerHeaders, "show-server-headers", false, "Show server headers in the logs")
 	fs.StringVar(&m.url, "url", "", "Websocket server to connect to")
 	fs.BoolVar(&m.insecure, "insecure", false, "Don't verify the tls certificate chain")
 	fs.DurationVar(&m.readTimeout, "read-timeout", 15 * time.Second, "Read timeout for the websocket connection")
@@ -119,13 +123,22 @@ func (m *Websocket) Init(in, out chan *Message, global *GlobalFlags) (error) {
 func websocketStartHandler(m *Websocket, dialer *websocket.Dialer, inc, outc MessageChannel, wg *sync.WaitGroup) {
 	defer wg.Done()
 
-	conn, _, err := dialer.Dial(m.url, ParseHTTPHeaders(m.headers))
+	headers := ParseHTTPHeaders(m.headers)
+	conn, resp, err := dialer.Dial(m.url, headers)
 	if err != nil {
 		err = errors.Wrap(err, "Error dialing websocket connection")
 		log.Println(err.Error())
 		close(outc)
 		DrainChannel(inc, nil)
 		return
+	}
+
+	if m.showClientHeaders {
+		ShowHTTPClientHeaders(headers)
+	}
+
+	if m.showServerHeaders {
+		ShowHTTPServerHeaders(resp.Header)
 	}
 
 	donec := make(chan struct{})

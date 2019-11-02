@@ -1,6 +1,7 @@
 package main
 
 import (
+	"log"
 	"bytes"
 	"sync"
 	"regexp"
@@ -46,4 +47,25 @@ func ParseHTTPHeaders(rawHeaders []string) (headers http.Header) {
 	}
 
 	return headers
+}
+
+func ShowHTTPServerHeaders(headers http.Header) {
+	ShowHTTPHeaders(false, headers)
+}
+
+func ShowHTTPClientHeaders(headers http.Header) {
+	ShowHTTPHeaders(true, headers)
+}
+
+func ShowHTTPHeaders(client bool, headers http.Header) {
+	for k, values := range headers {
+		for _, value := range values {
+			if client {
+				log.Printf("Client headers sent: \"%s: %s\"\n", k, value)
+				continue
+			}
+
+			log.Printf("Server headers received: \"%s: %s\"\n", k, value)
+		}
+	}
 }
