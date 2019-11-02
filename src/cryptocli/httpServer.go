@@ -27,6 +27,7 @@ type HTTPServer struct {
 	redirect string
 	user string
 	password string
+	headers []string
 }
 
 var HTTPServerFormUploadPage = []byte(`
@@ -48,6 +49,7 @@ func (m *HTTPServer) SetFlagSet(fs *pflag.FlagSet, args []string) {
 	fs.StringVar(&m.addr, "addr", "", "Listen on an address")
 	fs.BoolVar(&m.formUpload, "file-upload", false, "Serve a HTML page on GET / and a file upload endpoint on POST /")
 	fs.DurationVar(&m.connectTimeout, "connect-timeout", 30 * time.Second, "Max amount of time to wait for a potential connection when pipeline is closing")
+	fs.StringArrayVar(&m.headers, "header", make([]string, 0), "Set header in the form of \"header: value\"")
 	fs.DurationVar(&m.writeTimeout, "write-timeout", 15 * time.Second, "Set maximum duration before timing out writes of the response")
 	fs.DurationVar(&m.readTimeout, "read-timeout", 15 * time.Second, "Set the maximum duration for reading the entire request, including the body.")
 	fs.DurationVar(&m.readHeaderTimeout, "read-headers-timeout", 15 * time.Second, "Set the amount of time allowed to read request headers.")
@@ -172,9 +174,15 @@ func HTTPServerHandler(m *HTTPServer, relayer chan *HTTPServerRelayer, connc, do
 type HTTPServerHandle struct {
 	cb http.HandlerFunc
 	m *HTTPServer
+	headers http.Header
 }
 
 func (h *HTTPServerHandle) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+		headers := w.Header()
+		for k, v := range h.headers {
+			headers[k] = v
+		}
+
 		if h.m.user != "" && h.m.password != "" {
 			user, password, found := r.BasicAuth()
 			if ! found {
@@ -247,6 +255,7 @@ func NewHTTPServerHandle(m *HTTPServer, cb http.HandlerFunc) (http.Handler) {
 	return &HTTPServerHandle{
 		cb: cb,
 		m: m,
+		headers: ParseHTTPHeaders(m.headers),
 	}
 }
 

@@ -23,10 +23,12 @@ type WebsocketServer struct {
 	closeTimeout time.Duration
 	mode int
 	text bool
+	headers []string
 }
 
 func (m *WebsocketServer) SetFlagSet(fs *pflag.FlagSet, args []string) {
 	fs.StringVar(&m.addr, "addr", "", "Listen on an address")
+	fs.StringArrayVar(&m.headers, "header", make([]string, 0), "Set header in the form of \"header: value\"")
 	fs.DurationVar(&m.connectTimeout, "connect-timeout", 30 * time.Second, "Max amount of time to wait for a potential connection when pipeline is closing")
 	fs.DurationVar(&m.closeTimeout, "close-timeout", 15 * time.Second, "Timeout to wait for after sending the closure message")
 	fs.DurationVar(&m.readTimeout, "read-timeout", 15 * time.Second, "Read timeout for the websocket connection")
@@ -43,7 +45,7 @@ func websocketServerUpgrade(m *WebsocketServer, w http.ResponseWriter, req *http
 		return true
 	}
 
-	conn, err := upgrader.Upgrade(w, req, nil)
+	conn, err := upgrader.Upgrade(w, req, ParseHTTPHeaders(m.headers))
 	if err != nil {
 		err = errors.Wrap(err, "Fail to upgrade to websocket")
 		log.Println(err.Error())
