@@ -1,6 +1,8 @@
 #!/bin/sh
 set -e
 
+cd "$( cd "$(dirname "$0")"; pwd -P)"
+
 TAG=$1
 
 usage() {
