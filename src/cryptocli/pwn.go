@@ -145,6 +145,102 @@ func PwnHandler(m *Pwn, inc, outc MessageChannel, vm *otto.Otto, wg *sync.WaitGr
 		return otto.UndefinedValue()
 	})
 
+	vm.Set("pipe", func(call otto.FunctionCall) otto.Value {
+		pipe, err := call.Argument(0).ToString()
+		if err != nil {
+			err = errors.Wrapf(err, "Error casting first argument to string in %s\n", call.CallerLocation())
+			log.Println(err.Error())
+			return otto.UndefinedValue()
+		}
+
+		inCallback, _ := call.Argument(1).ToString()
+		outCallback, _ := call.Argument(2).ToString()
+
+		pin, pout, _, err := InitPipeline(pipe, &GlobalFlags{})
+		if err != nil {
+			err = errors.Wrapf(err, "Error init pipeline in %s\n", call.CallerLocation())
+			log.Println(err.Error())
+			return otto.UndefinedValue()
+		}
+
+		wg := &sync.WaitGroup{}
+
+		poutc := make(MessageChannel)
+		pout <- &Message{
+			Type: MessageTypeChannel,
+			Interface: poutc,
+		}
+
+		pr, pw := io.Pipe()
+		go func(buffer *bufio.Reader, pw *io.PipeWriter) {
+			_, err := io.Copy(pw, buffer)
+			pw.CloseWithError(err)
+		}(buffer, pw)
+
+		LOOP: for {
+			select {
+				case message, opened := <- pin:
+					if ! opened {
+						break LOOP
+					}
+
+					switch message.Type {
+						case MessageTypeTerminate:
+							wg.Wait()
+							pout <- message
+							break LOOP
+						case MessageTypeChannel:
+							pinc, ok := message.Interface.(MessageChannel)
+							if ok {
+								wg.Add(2)
+								go func(pr *io.PipeReader, pinc, outc MessageChannel, wg *sync.WaitGroup) {
+									defer wg.Done()
+
+									for payload := range pinc {
+										if inCallback != "undefined" {
+											_, err = call.Otto.Call(inCallback, nil, string(payload[:]))
+											if err != nil {
+												err = errors.Wrap(err, "Error calling inc function")
+												log.Println(err.Error())
+												pr.CloseWithError(err)
+											}
+										}
+
+										outc <- payload
+									}
+
+									pr.Close()
+								}(pr, pinc, outc, wg)
+								go func(pr *io.PipeReader, poutc MessageChannel, wg *sync.WaitGroup) {
+									defer wg.Done()
+									defer close(poutc)
+
+									err := ReadBytesStep(pr, func(payload []byte) bool {
+										if outCallback != "undefined" {
+											_, err = call.Otto.Call(outCallback, nil, string(payload[:]))
+											if err != nil {
+												err = errors.Wrap(err, "Error calling outc function")
+												log.Println(err.Error())
+											}
+										}
+										poutc <- payload
+
+										return true
+									})
+									if err != nil {
+										err = errors.Wrap(err, "Error reading buffer")
+										log.Println(err.Error())
+										return
+									}
+								}(pr, poutc, wg)
+							}
+					}
+			}
+		}
+
+		return otto.UndefinedValue()
+	})
+
 	vm.Set("fromJSON", func(call otto.FunctionCall) otto.Value {
 		first, err := call.Argument(0).ToString()
 		if err != nil {
