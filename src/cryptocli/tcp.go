@@ -71,9 +71,6 @@ func (m *TCP) Init(in, out chan *Message, global *GlobalFlags) (error) {
 						go tcpStartHandler(m, inc, outc, wg)
 
 						if ! global.MultiStreams {
-							if ! init {
-								close(outc)
-							}
 							wg.Wait()
 							out <- &Message{Type: MessageTypeTerminate,}
 							break LOOP
