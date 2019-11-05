@@ -132,6 +132,7 @@ func tcpStartHandler(m *TCP, inc, outc MessageChannel, wg *sync.WaitGroup) {
 
 func tcpStartIn(conn net.Conn, inc MessageChannel, wg *sync.WaitGroup) {
 	defer wg.Done()
+	defer conn.Close()
 
 	for payload := range inc {
 		_, err := conn.Write(payload)
