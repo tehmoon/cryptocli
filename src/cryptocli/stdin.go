@@ -75,15 +75,14 @@ func (m *Stdin) Init(in, out chan *Message, global *GlobalFlags) (error) {
 						wg.Add(1)
 						go func(inc, outc MessageChannel, datac chan []byte, wg *sync.WaitGroup, cancel chan struct{}, mutex *StdinMutex) {
 							defer wg.Done()
-							defer mutex.Unlock()
-							defer DrainChannel(inc, nil)
-							defer close(outc)
 
 							mutex.Lock()
+							defer mutex.Unlock()
 
 							LOOP: for {
 								select {
 									case <- cancel:
+log.Println("canclled")
 										break LOOP
 									case _, opened := <- inc:
 										if ! opened {
@@ -98,7 +97,17 @@ func (m *Stdin) Init(in, out chan *Message, global *GlobalFlags) (error) {
 								}
 							}
 
+							close(outc)
+							DrainChannel(inc, nil)
 						}(inc, outc, datac, wg, cancel, stdinMutex)
+
+						if ! global.MultiStreams {
+							wg.Wait()
+							close(cancel)
+							for range datac {}
+							out <- &Message{Type: MessageTypeTerminate,}
+							break LOOP
+						}
 					}
 			}
 		}
