@@ -26,6 +26,10 @@ type Stdin struct {
 func (m *Stdin) Init(in, out chan *Message, global *GlobalFlags) (error) {
 	stdinMutex.Lock()
 	defer stdinMutex.Unlock()
+	defer func() {
+		stdinMutex.Init = false
+	}()
+
 	if stdinMutex.Init {
 		return errors.New("Module \"stdin\" cannot be added more than once")
 	}
