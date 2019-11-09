@@ -2,6 +2,7 @@ package main
 
 import (
 	"io"
+	"github.com/tehmoon/errors"
 )
 
 const (
@@ -120,4 +121,123 @@ func (mr MessageReader) Close() (error) {
 	mr.sync <- struct{}{}
 
 	return mr.err
+}
+
+type ChannelReader struct {
+	crumb []byte
+	c MessageChannel
+}
+
+// Not thread safe
+func NewChannelReader(c MessageChannel) (cr *ChannelReader) {
+	cr = &ChannelReader{
+		crumb: make([]byte, 0),
+		c: c,
+	}
+
+	return cr
+}
+
+func (cr *ChannelReader) Read(p []byte) (n int, err error) {
+	if cr.crumb == nil {
+		return -1, ErrChannelReaderClosed
+	}
+
+	if len(cr.crumb) >= len(p) {
+		copy(p, cr.crumb[:len(p)])
+		cr.crumb = cr.crumb[len(p):]
+		return len(p), nil
+	}
+
+	for {
+		payload, opened := <- cr.c
+		if ! opened {
+			copy(p, cr.crumb[:len(p)])
+			cr.crumb = cr.crumb[len(p):]
+			return len(p), io.EOF
+		}
+
+		cr.crumb = append(cr.crumb, payload...)
+
+		if len(cr.crumb) >= len(p) {
+			copy(p, cr.crumb[:len(p)])
+			cr.crumb = cr.crumb[len(p):]
+			return len(p), nil
+		}
+	}
+
+	return -1, errors.New("Un-handled error")
+}
+
+func (cr *ChannelReader) Crumbs() (payload []byte, err error) {
+	if cr.crumb == nil {
+		return nil, ErrChannelReaderClosed
+	}
+
+	crumb := cr.crumb
+	cr.crumb = make([]byte, 0)
+	return crumb, nil
+}
+
+func (cr *ChannelReader) ReadMessage() (payload []byte, err error) {
+	if len(cr.crumb) != 0 {
+		crumb := cr.crumb
+		cr.crumb = make([]byte, 0)
+		return crumb, nil
+	}
+
+	payload, opened := <- cr.c
+	if ! opened {
+		return nil, io.EOF
+	}
+
+	return payload, nil
+}
+
+var ErrChannelReaderClosed = errors.New("Channel reader already closed")
+
+func (cr *ChannelReader) ReadLine() (payload []byte, err error) {
+	if cr.crumb == nil {
+		return nil, ErrChannelReaderClosed
+	}
+
+	if len(cr.crumb) != 0 {
+		for i, c := range cr.crumb {
+			if c == '\n' {
+				payload = cr.crumb[:i]
+				cr.crumb = cr.crumb[i:]
+				return payload, nil
+			}
+		}
+	}
+
+	for {
+		payload, opened := <- cr.c
+		if ! opened {
+			crumb := cr.crumb
+			cr.crumb = make([]byte, 0)
+			return crumb, io.EOF
+		}
+
+		for i, c := range payload {
+			if c == '\n' {
+				payload = append(cr.crumb, payload[:i]...)
+				cr.crumb = payload[i:]
+				return payload, nil
+			}
+		}
+
+		cr.crumb = append(cr.crumb, payload...)
+	}
+}
+
+func (cr *ChannelReader) Close() error {
+	if cr.crumb == nil {
+		return ErrChannelReaderClosed
+	}
+
+	DrainChannel(cr.c, nil)
+	cr.crumb = nil
+
+	return nil
 }
