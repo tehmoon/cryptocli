@@ -9,7 +9,7 @@ import (
 	"github.com/tehmoon/errors"
 	"github.com/robertkrimen/otto"
 	"io"
-	"bufio"
+	"regexp"
 	jsParser "github.com/robertkrimen/otto/parser"
 )
 
@@ -103,34 +103,7 @@ func PwnHandler(m *Pwn, inc, outc MessageChannel, vm *otto.Otto, wg *sync.WaitGr
 	defer wg.Done()
 
 	cancel := make(chan struct{})
-	pr, pw := io.Pipe()
-	buffer := bufio.NewReader(pr)
-
-	wg.Add(1)
-	go func(inc MessageChannel, writer *io.PipeWriter, wg *sync.WaitGroup, cancel chan struct{}) {
-		defer wg.Done()
-		defer DrainChannel(inc, nil)
-
-		LOOP: for {
-			select {
-				case <- cancel:
-					break LOOP
-				case payload, opened := <- inc:
-					if ! opened {
-						break LOOP
-					}
-
-					_, err := writer.Write(payload)
-					if err != nil {
-						err = errors.Wrap(err, "Error writing to pipe")
-						log.Println(err.Error())
-						break LOOP
-					}
-			}
-		}
-
-		writer.Close()
-	}(inc, pw, wg, cancel)
+	reader := NewChannelReader(inc)
 
 	vm.Set("log", func(call otto.FunctionCall) otto.Value {
 		first, err := call.Argument(0).ToString()
@@ -145,6 +118,83 @@ func PwnHandler(m *Pwn, inc, outc MessageChannel, vm *otto.Otto, wg *sync.WaitGr
 		return otto.UndefinedValue()
 	})
 
+	vm.Set("regexp", func(call otto.FunctionCall) otto.Value {
+		str, err := call.Argument(0).ToString()
+		if err != nil {
+			err = errors.Wrapf(err, "Error casting first argument to string in %s\n", call.CallerLocation())
+			log.Println(err.Error())
+			return otto.UndefinedValue()
+		}
+
+		src, err := call.Argument(1).ToString()
+		if err != nil {
+			err = errors.Wrapf(err, "Error casting second argument to string in %s\n", call.CallerLocation())
+			log.Println(err.Error())
+			return otto.UndefinedValue()
+		}
+
+		repl, err := call.Argument(2).ToString()
+		if err != nil {
+			err = errors.Wrapf(err, "Error casting third argument to string in %s\n", call.CallerLocation())
+			log.Println(err.Error())
+			return otto.UndefinedValue()
+		}
+
+		re, err := regexp.Compile(str)
+		if err != nil {
+			err = errors.Wrapf(err, "Error compiling regexp %s\n", call.CallerLocation())
+			log.Println(err.Error())
+			return otto.UndefinedValue()
+		}
+
+		val, _ := otto.ToValue(re.ReplaceAllString(src, repl))
+		return val
+	})
+
+	vm.Set("readFromPipe", func(call otto.FunctionCall) otto.Value {
+		pipe, err := call.Argument(0).ToString()
+		if err != nil {
+			err = errors.Wrapf(err, "Error casting first argument to string in %s\n", call.CallerLocation())
+			log.Println(err.Error())
+			return otto.UndefinedValue()
+		}
+
+		data, err := ReadAllPipeline(pipe)
+		if err != nil {
+			err = errors.Wrap(err, "Error reading from pipeline")
+			log.Println(err.Error())
+			return otto.UndefinedValue()
+		}
+
+		val, _ := otto.ToValue(string(data[:]))
+		return val
+	})
+
+	vm.Set("writeToPipe", func(call otto.FunctionCall) otto.Value {
+		pipe, err := call.Argument(0).ToString()
+		if err != nil {
+			err = errors.Wrapf(err, "Error casting first argument to string in %s\n", call.CallerLocation())
+			log.Println(err.Error())
+			return otto.UndefinedValue()
+		}
+
+		data, err := call.Argument(1).ToString()
+		if err != nil {
+			err = errors.Wrapf(err, "Error casting second argument to string in %s\n", call.CallerLocation())
+			log.Println(err.Error())
+			return otto.UndefinedValue()
+		}
+
+		err = WriteToPipeline(pipe, []byte(data))
+		if err != nil {
+			err = errors.Wrap(err, "Error writing to pipeline")
+			log.Println(err.Error())
+			return otto.UndefinedValue()
+		}
+
+		return otto.UndefinedValue()
+	})
+
 	vm.Set("pipe", func(call otto.FunctionCall) otto.Value {
 		pipe, err := call.Argument(0).ToString()
 		if err != nil {
@@ -153,10 +203,11 @@ func PwnHandler(m *Pwn, inc, outc MessageChannel, vm *otto.Otto, wg *sync.WaitGr
 			return otto.UndefinedValue()
 		}
 
-		inCallback, _ := call.Argument(1).ToString()
-		outCallback, _ := call.Argument(2).ToString()
+		callback, _ := call.Argument(1).ToString()
 
-		pin, pout, _, err := InitPipeline(pipe, &GlobalFlags{})
+		pin, pout, _, err := InitPipeline(pipe, &GlobalFlags{
+			MaxConcurrentStreams: 1,
+		})
 		if err != nil {
 			err = errors.Wrapf(err, "Error init pipeline in %s\n", call.CallerLocation())
 			log.Println(err.Error())
@@ -170,12 +221,6 @@ func PwnHandler(m *Pwn, inc, outc MessageChannel, vm *otto.Otto, wg *sync.WaitGr
 			Type: MessageTypeChannel,
 			Interface: poutc,
 		}
-
-		pr, pw := io.Pipe()
-		go func(buffer *bufio.Reader, pw *io.PipeWriter) {
-			_, err := io.Copy(pw, buffer)
-			pw.CloseWithError(err)
-		}(buffer, pw)
 
 		LOOP: for {
 			select {
@@ -192,51 +237,60 @@ func PwnHandler(m *Pwn, inc, outc MessageChannel, vm *otto.Otto, wg *sync.WaitGr
 						case MessageTypeChannel:
 							pinc, ok := message.Interface.(MessageChannel)
 							if ok {
+								if callback != "undefined" {
+									oldReader := reader
+									reader = NewChannelReader(pinc)
+
+									oldOutc := outc
+									outc = poutc
+
+									_, err := vm.Call(callback, nil)
+									if err != nil {
+										err = errors.Wrap(err, "Error calling callback function")
+										log.Println(err.Error())
+									}
+
+									close(outc)
+									reader.Close()
+									wg.Wait()
+									pout <- &Message{Type: MessageTypeTerminate,}
+									outc = oldOutc
+									reader = oldReader
+									break LOOP
+								}
 								wg.Add(2)
-								go func(pr *io.PipeReader, pinc, outc MessageChannel, wg *sync.WaitGroup) {
-									defer wg.Done()
-
+								go func(pinc, outc MessageChannel, wg *sync.WaitGroup) {
 									for payload := range pinc {
-										if inCallback != "undefined" {
-											_, err = call.Otto.Call(inCallback, nil, string(payload[:]))
-											if err != nil {
-												err = errors.Wrap(err, "Error calling inc function")
-												log.Println(err.Error())
-												pr.CloseWithError(err)
-											}
-										}
-
 										outc <- payload
 									}
-
-									pr.Close()
-								}(pr, pinc, outc, wg)
-								go func(pr *io.PipeReader, poutc MessageChannel, wg *sync.WaitGroup) {
+									wg.Done()
+								}(pinc, outc, wg)
+								go func(reader *ChannelReader, poutc MessageChannel, wg *sync.WaitGroup) {
 									defer wg.Done()
 									defer close(poutc)
-
-									err := ReadBytesStep(pr, func(payload []byte) bool {
-										if outCallback != "undefined" {
-											_, err = call.Otto.Call(outCallback, nil, string(payload[:]))
-											if err != nil {
-												err = errors.Wrap(err, "Error calling outc function")
-												log.Println(err.Error())
+									for {
+										message, err := reader.ReadMessage()
+										if err != nil {
+											if err == io.EOF {
+												return
 											}
+											err = errors.Wrap(err, "Error reading from channel message")
+											log.Println(err.Error())
+											return
 										}
-										poutc <- payload
-
-										return true
-									})
-									if err != nil {
-										err = errors.Wrap(err, "Error reading buffer")
-										log.Println(err.Error())
-										return
+										poutc <- message
 									}
-								}(pr, poutc, wg)
+								}(reader, poutc, wg)
+								wg.Wait()
+								pout <- &Message{Type: MessageTypeTerminate,}
+								break LOOP
 							}
 					}
 			}
 		}
+
+		<- pin
+		close(pout)
 
 		return otto.UndefinedValue()
 	})
@@ -326,24 +380,28 @@ func PwnHandler(m *Pwn, inc, outc MessageChannel, vm *otto.Otto, wg *sync.WaitGr
 		return otto.TrueValue()
 	})
 
-	vm.Set("readline", func(call otto.FunctionCall) otto.Value {
-		line := ""
-
-		for {
-			l, still, err := buffer.ReadLine()
-			if err != nil && err != io.EOF {
+	vm.Set("readMessage", func(call otto.FunctionCall) otto.Value {
+		message, err := reader.ReadMessage()
+		if err != nil {
 				err = errors.Wrapf(err, "Error reading from pipe in %s\n", call.CallerLocation())
 				log.Println(err.Error())
 				return otto.UndefinedValue()
-			}
-
-			line += string(l)
-			if ! still {
-				break
-			}
 		}
 
-		val, _ := otto.ToValue(line)
+		val, _ := otto.ToValue(string(message[:]))
+
+		return val
+	})
+
+	vm.Set("readline", func(call otto.FunctionCall) otto.Value {
+		line, err := reader.ReadLine()
+		if err != nil {
+				err = errors.Wrapf(err, "Error reading from pipe in %s\n", call.CallerLocation())
+				log.Println(err.Error())
+				return otto.UndefinedValue()
+		}
+
+		val, _ := otto.ToValue(string(line[:]))
 
 		return val
 	})
@@ -357,23 +415,22 @@ func PwnHandler(m *Pwn, inc, outc MessageChannel, vm *otto.Otto, wg *sync.WaitGr
 		}
 
 		payload := make([]byte, first)
-		i, err := io.ReadFull(buffer, payload)
-		if err != nil {
+		n, err := reader.Read(payload)
+		if err != nil && err != io.EOF {
 			err = errors.Wrapf(err, "Error reading from pipe in %s\n", call.CallerLocation())
 			log.Println(err.Error())
 			return otto.UndefinedValue()
 		}
 
-		val, _ := otto.ToValue(string(payload[:i]))
+		val, _ := otto.ToValue(string(payload[:n]))
 
 		return val
 	})
 
 	wg.Add(1)
-	go func(outc MessageChannel, vm *otto.Otto, reader *io.PipeReader, wg *sync.WaitGroup, cancel chan struct{}) {
+	go func(outc MessageChannel, vm *otto.Otto, wg *sync.WaitGroup, cancel chan struct{}) {
 		defer wg.Done()
 		defer close(outc)
-		defer pr.Close()
 		defer close(cancel)
 
 		_, err := vm.Call("start", nil)
@@ -382,7 +439,7 @@ func PwnHandler(m *Pwn, inc, outc MessageChannel, vm *otto.Otto, wg *sync.WaitGr
 			log.Println(err.Error())
 			return
 		}
-	}(outc, vm, pr, wg, cancel)
+	}(outc, vm, wg, cancel)
 }
 
 func NewPwn() (Module) {

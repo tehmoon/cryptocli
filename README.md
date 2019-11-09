@@ -69,48 +69,54 @@ Here's a list of builtins:
   - write(string): Write string to the output 
   - sleep(integer): Sleep for x seconds
   - log(string): Log the string to stderr
-  - pipe(string, string, string): Start a new pipeline. The first argument is the pipeline definition. The second argument is the name of the callback used for every message read for the pipe. The third is the same as the second argument but for output messages.
+  - readToPipe(string): The first argument is the pipeline definition. It returns a string that is all the data from that pipeline.
+  - writeToPipe(string, string): The first argument is the pipeline definition, the second is the string to be written to that pipeline.
+  - pipe(string, string): Start a new pipeline. The first argument is the pipeline definition. The second argument is the name of the callback that will be executed. In that callback, all attempt to read and write will do this on the new pipeline, not the parent. If the callback is omited, the pipe will patch the pipeline to the current pipeline, blocking execution until done. Note that after that, the pipeline will be empty and no read/write can be done
+  - regexp(string, string, string): Use the go regexp package to perform regular expression and replace. The first parameter is the regexp. The second one is the string to read from, and the third one is the replace string. It returns a string that is the result of the replace.
 
 ### Example:
 
 ```
-function inc(data) {
-  // log from the module's input
-	log("in: " + data)
-};
-function outc(data) {
-  // log from the pipe's output
-	log("out: " + data)
-};
+var user_id = ""
+var url = ""
 
 function start() {
-  // read one line
-	var step1 = readline()
-	if (step1 === undefined) {
-    // exit if error
-		log("error reading the line")
-		return
-	}
+  // Write to stdout
+  writeToPipe("stdout", "What's your name: ")
 
-  // serialize the line to json
-	step1 = fromJSON(step1)
-	if (step1 === undefined) {
-    // exit if error
-		console.log("error reading json object")
-		return
-	}
+  // Read the response from stdin and remove any new line.
+  user_id = readFromPipe("stdin -- byte --max-messages 1")
+  user_id = regexp("\n", user_id, "")
+  
+  // Start tcp server and pivot to the function name callback
+  pipe("tcp-server --read-timeout 10h --listen :8080", "callback")
 
-  // increment the field i
-	step1.i++
+  // When callback is done executing, let me know what was the website
+  log("visited " + url)
+}
 
-  // serial to json, log it and send it back to the pwn output
-	log(toJSON(step1))
-	write(toJSON(step1))
+function callback() {
+  // Write to the tcp connection
+  write(user_id + " wants to know what website you want to visit: ")
 
-  // pivot to stdin/stdout. Notice that it is reversed, because stdout is patched to the pwn module input and stdin is patched to the pwn module output
-	pipe("stdout -- stdin", "inc", "outc")
+  // Read line from tcp connection, this will be the url to user
+  url = readline()
+  if (url === undefined) {
+    return
+  }
+
+  // Start the http module to query the desired website
+  var content = readFromPipe("http --url " + url)
+
+  // Write the content back to the tcp connection
+  write(content)
+
+  // Pivot one last time and take control of the terminal
+  pipe("stdout -- stdin")
 }
 ```
+
+As you can see, it's pretty awesome :)
 
 ## Examples
 
