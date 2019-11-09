@@ -157,7 +157,11 @@ func startByteHandler(m *Byte, inc, outc MessageChannel, wg *sync.WaitGroup) {
 	}
 
 	skipped := 0
-	count := 0
+	count := 1
+
+	if (m.maxMessages - m.skipMessages) <= 0 && m.skipMessages > 0 && m.maxMessages > 0 {
+		return
+	}
 
 	for {
 		payload, err := cb()
@@ -167,14 +171,10 @@ func startByteHandler(m *Byte, inc, outc MessageChannel, wg *sync.WaitGroup) {
 			break
 		}
 		if payload != nil {
-			log.Printf("skipped: %d skipmessages: %d maxMessages: %d count: %d len: %d\n", skipped, m.skipMessages, m.maxMessages, count, len(payload))
-			if m.skipMessages > 0 && skipped < m.skipMessages - 1 {
+			if m.skipMessages > 0 && skipped < m.skipMessages {
 				skipped++
+				count++
 				continue
-			}
-
-			if m.maxMessages > 0 && count >= m.maxMessages {
-				break
 			}
 
 			if len(payload) > 0 {
@@ -182,6 +182,10 @@ func startByteHandler(m *Byte, inc, outc MessageChannel, wg *sync.WaitGroup) {
 				payload = append(payload, []byte(m.append)...)
 
 				outc <- payload
+
+				if m.maxMessages > 0 && count >= m.maxMessages {
+					break
+				}
 			}
 
 			count++
