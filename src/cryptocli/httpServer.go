@@ -19,10 +19,6 @@ func init() {
 type HTTPServer struct {
 	addr string
 	connectTimeout time.Duration
-	writeTimeout time.Duration
-	readHeaderTimeout time.Duration
-	idleTimeout time.Duration
-	readTimeout time.Duration
 	formUpload bool
 	redirect string
 	user string
@@ -54,10 +50,6 @@ func (m *HTTPServer) SetFlagSet(fs *pflag.FlagSet, args []string) {
 	fs.BoolVar(&m.formUpload, "file-upload", false, "Serve a HTML page on GET / and a file upload endpoint on POST /")
 	fs.DurationVar(&m.connectTimeout, "connect-timeout", 30 * time.Second, "Max amount of time to wait for a potential connection when pipeline is closing")
 	fs.StringArrayVar(&m.headers, "header", make([]string, 0), "Set header in the form of \"header: value\"")
-	fs.DurationVar(&m.writeTimeout, "write-timeout", 15 * time.Second, "Set maximum duration before timing out writes of the response")
-	fs.DurationVar(&m.readTimeout, "read-timeout", 15 * time.Second, "Set the maximum duration for reading the entire request, including the body.")
-	fs.DurationVar(&m.readHeaderTimeout, "read-headers-timeout", 15 * time.Second, "Set the amount of time allowed to read request headers.")
-	fs.DurationVar(&m.idleTimeout, "iddle-timeout", 5 * time.Second, "IdleTimeout is the maximum amount of time to wait for the next request when keep-alives are enabled")
 	fs.StringVar(&m.user, "user", "", "Specify the required user for basic auth")
 	fs.StringVar(&m.password, "password", "", "Specify the required password for basic auth")
 	fs.StringVar(&m.redirect, "redirect-to", "", "Redirect the request to where the download can begin")
@@ -335,18 +327,6 @@ func (m *HTTPServer) Init(in, out chan *Message, global *GlobalFlags) (error) {
 		return errors.Errorf("Flag %q cannot be negative or zero", "--connect-timeout")
 	}
 
-	if m.readTimeout < 1 {
-		return errors.Errorf("Flag %q cannot be negative or zero", "--read-timeout")
-	}
-
-	if m.idleTimeout < 1 {
-		return errors.Errorf("Flag %q cannot be negative or zero", "--idle-timeout")
-	}
-
-	if m.writeTimeout < 1 {
-		return errors.Errorf("Flag %q cannot be negative or zero", "--write-timeout")
-	}
-
 	if m.redirect != "" && m.formUpload {
 		return errors.Errorf("Flag %q and flag %q are mutually exclusive", "--redirect-to", "--file-upload")
 	}
@@ -382,10 +362,6 @@ func (m *HTTPServer) Init(in, out chan *Message, global *GlobalFlags) (error) {
 
 		server := &http.Server{
 			Handler: mux,
-			ReadTimeout: m.readTimeout,
-			IdleTimeout: m.idleTimeout,
-			WriteTimeout: m.writeTimeout,
-			ReadHeaderTimeout: m.readHeaderTimeout,
 		}
 		go server.Serve(listener)
 
