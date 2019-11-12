@@ -18,6 +18,10 @@ type Stdout struct {}
 func (m Stdout) Init(in, out chan *Message, global *GlobalFlags) (error) {
 	stdoutMutex.Lock()
 	defer stdoutMutex.Unlock()
+	defer func() {
+		stdoutMutex.Init = false
+	}()
+
 	if stdoutMutex.Init {
 		return errors.New("Module \"stdout\" cannot be added more than once")
 	}

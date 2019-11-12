@@ -26,8 +26,8 @@ type Byte struct {
 }
 
 func (m *Byte) Init(in, out chan *Message, global *GlobalFlags) (err error) {
-	if m.messageSize < 0 {
-		return errors.Errorf("Flag %q cannot be lower than 0", "message-size")
+	if m.messageSize > 0 && m.delimFlag != "" {
+		return errors.Errorf("Flag %q is mutually exclusive with flag %q\n", "message-size", "delimiter")
 	}
 
 	if m.delimFlag != "" {
@@ -92,6 +92,12 @@ var ByteReaderCallbackFull = func(reader io.Reader, n int) (ByteReaderCallback) 
 	}
 }
 
+var ByteReaderCallbackMessage = func(reader *ChannelReader) (ByteReaderCallback) {
+	return func() ([]byte, error) {
+		return reader.ReadMessage()
+	}
+}
+
 var ByteReaderCallbackDelim = func(reader io.Reader, delim *regexp.Regexp) (ByteReaderCallback) {
 	scanner := bufio.NewScanner(reader)
 
@@ -146,18 +152,24 @@ func startByteHandler(m *Byte, inc, outc MessageChannel, wg *sync.WaitGroup) {
 	defer DrainChannel(inc, nil)
 	defer close(outc)
 
-	reader := NewMessageReader(inc)
+	reader := NewChannelReader(inc)
 
 	var cb ByteReaderCallback
 
 	if m.delimFlag != "" {
 		cb = ByteReaderCallbackDelim(reader, m.delimiter)
-	} else {
+	} else if m.messageSize > 0 {
 		cb = ByteReaderCallbackFull(reader, m.messageSize)
+	} else {
+		cb = ByteReaderCallbackMessage(reader)
 	}
 
 	skipped := 0
-	count := 0
+	count := 1
+
+	if (m.maxMessages - m.skipMessages) <= 0 && m.skipMessages > 0 && m.maxMessages > 0 {
+		return
+	}
 
 	for {
 		payload, err := cb()
@@ -167,14 +179,10 @@ func startByteHandler(m *Byte, inc, outc MessageChannel, wg *sync.WaitGroup) {
 			break
 		}
 		if payload != nil {
-			log.Printf("skipped: %d skipmessages: %d maxMessages: %d count: %d len: %d\n", skipped, m.skipMessages, m.maxMessages, count, len(payload))
-			if m.skipMessages > 0 && skipped < m.skipMessages - 1 {
+			if m.skipMessages > 0 && skipped < m.skipMessages {
 				skipped++
+				count++
 				continue
-			}
-
-			if m.maxMessages > 0 && count >= m.maxMessages {
-				break
 			}
 
 			if len(payload) > 0 {
@@ -182,6 +190,10 @@ func startByteHandler(m *Byte, inc, outc MessageChannel, wg *sync.WaitGroup) {
 				payload = append(payload, []byte(m.append)...)
 
 				outc <- payload
+
+				if m.maxMessages > 0 && count >= m.maxMessages {
+					break
+				}
 			}
 
 			count++
@@ -194,7 +206,7 @@ func NewByte() (Module) {
 }
 
 func (m *Byte) SetFlagSet(fs *pflag.FlagSet, args []string) {
-	fs.IntVar(&m.messageSize, "message-size", 2<<13, "Split stream into messages of byte length. Mutually exclusive with \"--delimiter\"")
+	fs.IntVar(&m.messageSize, "message-size", -1, "Split stream into messages of byte length. Mutually exclusive with \"--delimiter\"")
 	fs.StringVar(&m.delimFlag, "delimiter", "", "Split stream into messages delimited by specified by the regexp delimiter. Mutually exclusive with \"--message-size\"")
 	fs.IntVar(&m.skipMessages, "skip-messages", 0, "Skip x messages after splitting")
 	fs.IntVar(&m.maxMessages, "max-messages", 0, "Stream x messages after skipped messages")

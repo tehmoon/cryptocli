@@ -71,9 +71,6 @@ func (m *TCP) Init(in, out chan *Message, global *GlobalFlags) (error) {
 						go tcpStartHandler(m, inc, outc, wg)
 
 						if ! global.MultiStreams {
-							if ! init {
-								close(outc)
-							}
 							wg.Wait()
 							out <- &Message{Type: MessageTypeTerminate,}
 							break LOOP
@@ -135,6 +132,7 @@ func tcpStartHandler(m *TCP, inc, outc MessageChannel, wg *sync.WaitGroup) {
 
 func tcpStartIn(conn net.Conn, inc MessageChannel, wg *sync.WaitGroup) {
 	defer wg.Done()
+	defer conn.Close()
 
 	for payload := range inc {
 		_, err := conn.Write(payload)

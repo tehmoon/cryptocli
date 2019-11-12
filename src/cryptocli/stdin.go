@@ -8,10 +8,14 @@ import (
 	"github.com/spf13/pflag"
 )
 
-var stdinMutex = &StdinMutex{Init: false,}
+var stdinMutex = &StdinMutex{
+	Init: false,
+	Datac: make(chan []byte),
+}
 
 type StdinMutex struct {
 	Init bool
+	Datac chan []byte
 	sync.Mutex
 }
 
@@ -19,25 +23,18 @@ func init() {
 	MODULELIST.Register("stdin", "Reads from stdin", NewStdin)
 }
 
-type Stdin struct {
-	sync *sync.WaitGroup
-}
+type Stdin struct {}
 
 func (m *Stdin) Init(in, out chan *Message, global *GlobalFlags) (error) {
 	stdinMutex.Lock()
 	defer stdinMutex.Unlock()
-	if stdinMutex.Init {
-		return errors.New("Module \"stdin\" cannot be added more than once")
+
+	if ! stdinMutex.Init {
+		stdinMutex.Init = true
+		go stdinStartRead(stdinMutex.Datac)
 	}
 
-	stdinMutex.Init = true
-
-	datac := make(chan []byte)
-	// Cancel will tell stdin to stop reading and close the out channel
-	cancel := make(chan struct{}, 0)
-
-
-	go func(in, out chan *Message, datac chan []byte, cancel chan struct{}) {
+	go func(in, out chan *Message, mutex *StdinMutex) {
 		wg := &sync.WaitGroup{}
 		init := false
 		outc := make(MessageChannel)
@@ -46,59 +43,78 @@ func (m *Stdin) Init(in, out chan *Message, global *GlobalFlags) (error) {
 			Interface: outc,
 		}
 
-		LOOP: for message := range in {
-			switch message.Type {
-				case MessageTypeTerminate:
-					close(cancel)
-					if ! init {
-						close(outc)
+		cancel := make(chan struct{})
+
+		LOOP: for {
+			select {
+				case _, opened := <- cancel:
+					if ! opened {
+						wg.Wait()
+						out <- &Message{Type: MessageTypeTerminate,}
+						break LOOP
 					}
-					for range datac {}
-					wg.Wait()
-					out <- message
-					break LOOP
+				case message, opened := <- in:
+					if ! opened {
+						break LOOP
+					}
 
-				case MessageTypeChannel:
-					inc, ok := message.Interface.(MessageChannel)
-					if ok {
-						if ! init {
-							init = true
-						} else {
-							outc = make(MessageChannel)
-
-							out <- &Message{
-								Type: MessageTypeChannel,
-								Interface: outc,
+					switch message.Type {
+						case MessageTypeTerminate:
+							if ! init {
+								close(outc)
 							}
-						}
+							wg.Wait()
+							out <- message
+							break LOOP
 
-						wg.Add(1)
-						go func(inc, outc MessageChannel, datac chan []byte, wg *sync.WaitGroup, cancel chan struct{}, mutex *StdinMutex) {
-							defer wg.Done()
-							defer mutex.Unlock()
-							defer DrainChannel(inc, nil)
-							defer close(outc)
+						case MessageTypeChannel:
+							inc, ok := message.Interface.(MessageChannel)
+							if ok {
+								if ! init {
+									init = true
+								} else {
+									outc = make(MessageChannel)
 
-							mutex.Lock()
+									out <- &Message{
+										Type: MessageTypeChannel,
+										Interface: outc,
+									}
+								}
 
-							LOOP: for {
-								select {
-									case <- cancel:
-										break LOOP
-									case _, opened := <- inc:
-										if ! opened {
-											break LOOP
+								wg.Add(1)
+								go func(inc, outc MessageChannel, mutex *StdinMutex, cancel chan struct{}, wg *sync.WaitGroup) {
+									defer wg.Done()
+
+									mutex.Lock()
+									defer mutex.Unlock()
+
+									LOOP: for {
+										select {
+											case _, opened := <- inc:
+												if ! opened {
+													break LOOP
+												}
+											case payload, opened := <- mutex.Datac:
+												if ! opened {
+													close(cancel)
+													break LOOP
+												}
+
+												outc <- payload
 										}
-									case payload, opened := <- datac:
-										if ! opened {
-											break LOOP
-										}
+									}
 
-										outc <- payload
+									close(outc)
+									DrainChannel(inc, nil)
+								}(inc, outc, stdinMutex, cancel, wg)
+
+								if ! global.MultiStreams {
+									wg.Wait()
+									out <- &Message{Type: MessageTypeTerminate,}
+									break LOOP
 								}
 							}
 
-						}(inc, outc, datac, wg, cancel, stdinMutex)
 					}
 			}
 		}
@@ -107,73 +123,30 @@ func (m *Stdin) Init(in, out chan *Message, global *GlobalFlags) (error) {
 		// Last message will signal the closing of the channel
 		<- in
 		close(out)
-	}(in, out, datac, cancel)
-
-	go func(out chan *Message, datac chan []byte, cancel chan struct{}) {
-		stdinStartOut(datac, cancel)
-		out <- &Message{Type: MessageTypeTerminate,}
-		close(datac)
-	}(out, datac, cancel)
+	}(in, out, stdinMutex)
 
 	return nil
 }
 
 func NewStdin() (Module) {
-	return &Stdin{
-		sync: &sync.WaitGroup{},
-	}
+	return &Stdin{}
 }
 
-func stdinStartOutRead(datac chan []byte, closed *StdinCloseSync, syn chan struct{}) {
-	err := ReadBytesStep(os.Stdin, func(payload []byte) (bool) {
-		closed.RLock()
-		if closed.Closed {
-			return false
-		}
+// Make this a global that is started once when the module starts.
+// Everything will read from it. There is not clean way to close
+// stdin so leave it open, this way it can be re-used.
+func stdinStartRead(datac chan []byte) {
+	defer close(datac)
 
+	err := ReadBytesStep(os.Stdin, func(payload []byte) (bool) {
 		datac <- payload
-		closed.RUnlock()
 		return true
 	})
 	if err != nil {
 		err = errors.Wrap(err, "Error copying stdin")
 		log.Println(err.Error())
+		return
 	}
-
-	closed.Lock()
-	if ! closed.Closed {
-		closed.Closed = true
-	}
-	closed.Unlock()
-
-	close(syn)
-}
-
-type StdinCloseSync struct {
-	sync.RWMutex
-	Closed bool
-}
-
-func stdinStartOut(datac chan []byte, cancel chan struct{}) {
-	// Closed will signal the reading stdin callback to stop reading.
-	closed := &StdinCloseSync{
-		Closed: false,
-	}
-
-	syn := make(chan struct{}, 0)
-
-	go stdinStartOutRead(datac, closed, syn)
-
-	select {
-		case <- cancel:
-		case <- syn:
-	}
-
-	closed.Lock()
-	if ! closed.Closed {
-		closed.Closed = true
-	}
-	closed.Unlock()
 }
 
 func (m *Stdin) SetFlagSet(fs *pflag.FlagSet, args []string) {}
