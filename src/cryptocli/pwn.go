@@ -99,6 +99,11 @@ func (m *Pwn) Init(in, out chan *Message, global *GlobalFlags) (error) {
 	return nil
 }
 
+type PwnPipeFlags struct {
+	MaxConcurrentStreams int
+	MultiStreams bool
+}
+
 func PwnHandler(m *Pwn, inc, outc MessageChannel, vm *otto.Otto, wg *sync.WaitGroup) {
 	defer wg.Done()
 
@@ -205,8 +210,50 @@ func PwnHandler(m *Pwn, inc, outc MessageChannel, vm *otto.Otto, wg *sync.WaitGr
 
 		callback, _ := call.Argument(1).ToString()
 
-		pin, pout, _, err := InitPipeline(pipe, &GlobalFlags{
+		flags := &PwnPipeFlags{
 			MaxConcurrentStreams: 1,
+			MultiStreams: false,
+		}
+
+		third, _ := call.Argument(2).Export()
+		if third != nil {
+			v, ok := third.(map[string]interface{})
+			if ! ok {
+				err = errors.Wrapf(err, "error casting argument to oject in %s\n", call.CallerLocation())
+				log.Println(err.Error())
+				return otto.UndefinedValue()
+			}
+
+			if arg, ok := v["max-concurrent-streams"]; ok {
+				maxConcurrentStreams, ok := arg.(int64)
+				if ! ok {
+					err = errors.Wrapf(err, "error casting max-concurrent-streams to int in %s\n", call.CallerLocation())
+					log.Println(err.Error())
+					return otto.UndefinedValue()
+				}
+
+				flags.MaxConcurrentStreams = int(maxConcurrentStreams)
+
+				if flags.MaxConcurrentStreams < 1 {
+					err = errors.Errorf("Flag %q cannot be less than 1\n", "max-concurrent-streams", call.CallerLocation())
+					log.Println(err.Error())
+					return otto.UndefinedValue()
+				}
+			}
+
+			if arg, ok := v["multi-streams"]; ok {
+				flags.MultiStreams, ok = arg.(bool)
+				if ! ok {
+					err = errors.Wrapf(err, "error casting multi-streams to bool in %s\n", call.CallerLocation())
+					log.Println(err.Error())
+					return otto.UndefinedValue()
+				}
+			}
+		}
+
+		pin, pout, _, err := InitPipeline(pipe, &GlobalFlags{
+			MaxConcurrentStreams: flags.MaxConcurrentStreams,
+			MultiStreams: flags.MultiStreams,
 		})
 		if err != nil {
 			err = errors.Wrapf(err, "Error init pipeline in %s\n", call.CallerLocation())
@@ -215,6 +262,7 @@ func PwnHandler(m *Pwn, inc, outc MessageChannel, vm *otto.Otto, wg *sync.WaitGr
 		}
 
 		wg := &sync.WaitGroup{}
+		init := false
 
 		poutc := make(MessageChannel)
 		pout <- &Message{
@@ -226,17 +274,34 @@ func PwnHandler(m *Pwn, inc, outc MessageChannel, vm *otto.Otto, wg *sync.WaitGr
 			select {
 				case message, opened := <- pin:
 					if ! opened {
+						if ! init {
+							close(poutc)
+						}
 						break LOOP
 					}
 
 					switch message.Type {
 						case MessageTypeTerminate:
+							if ! init {
+								close(poutc)
+							}
 							wg.Wait()
 							pout <- message
 							break LOOP
 						case MessageTypeChannel:
 							pinc, ok := message.Interface.(MessageChannel)
 							if ok {
+								if ! init {
+									init = true
+								} else {
+log.Println("send new channel")
+									poutc = make(MessageChannel)
+									pout <- &Message{
+										Type: MessageTypeChannel,
+										Interface: poutc,
+									}
+								}
+
 								if callback != "undefined" {
 									oldReader := reader
 									reader = NewChannelReader(pinc)
@@ -253,12 +318,18 @@ func PwnHandler(m *Pwn, inc, outc MessageChannel, vm *otto.Otto, wg *sync.WaitGr
 									close(outc)
 									reader.Close()
 									wg.Wait()
-									pout <- &Message{Type: MessageTypeTerminate,}
 									outc = oldOutc
 									reader = oldReader
-									break LOOP
+									if ! flags.MultiStreams {
+										pout <- &Message{Type: MessageTypeTerminate,}
+										break LOOP
+									}
+
+log.Println("continue loop")
+									continue LOOP
 								}
 								wg.Add(2)
+log.Println("here")
 								go func(pinc, outc MessageChannel, wg *sync.WaitGroup) {
 									for payload := range pinc {
 										outc <- payload
@@ -281,9 +352,11 @@ func PwnHandler(m *Pwn, inc, outc MessageChannel, vm *otto.Otto, wg *sync.WaitGr
 										poutc <- message
 									}
 								}(reader, poutc, wg)
-								wg.Wait()
-								pout <- &Message{Type: MessageTypeTerminate,}
-								break LOOP
+								if ! flags.MultiStreams {
+									wg.Wait()
+									pout <- &Message{Type: MessageTypeTerminate,}
+									break LOOP
+								}
 							}
 					}
 			}
