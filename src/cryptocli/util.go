@@ -20,7 +20,7 @@ func CopyResetBuffer(buff *bytes.Buffer) ([]byte) {
 	return payload
 }
 
-func DrainChannel(inc MessageChannel, wg *sync.WaitGroup) {
+func DrainChannel(inc chan []byte, wg *sync.WaitGroup) {
 	for range inc {}
 	if wg != nil {
 		wg.Done()

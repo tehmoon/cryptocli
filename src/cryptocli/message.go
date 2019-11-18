@@ -1,5 +1,9 @@
 package main
 
+import (
+	"sync"
+)
+
 type MessageType int
 
 const (
@@ -20,7 +24,40 @@ const (
 // The sender will close the channel to signal the end of the
 // transmition.
 // The reciever takes care of creating new channels.
-type MessageChannel chan []byte
+type MessageChannel struct {
+	started bool
+	metadata map[string]interface{}
+	Channel chan []byte
+	wg *sync.WaitGroup
+	Callback MessageChannelFunc
+}
+
+func NewMessageChannel() (mc *MessageChannel) {
+	mc = &MessageChannel{
+		started: false,
+		Channel: make(chan []byte),
+		wg: &sync.WaitGroup{},
+	}
+
+	mc.Callback = func() (metadata map[string]interface{}, inc chan []byte) {
+		mc.wg.Wait()
+
+		return mc.metadata, mc.Channel
+	}
+
+	mc.wg.Add(1)
+	return mc
+}
+
+func (mc *MessageChannel) Start(metadata map[string]interface{}) {
+	if ! mc.started {
+		mc.metadata = metadata
+		mc.started = true
+		mc.wg.Done()
+	}
+}
+
+type MessageChannelFunc func() (metadata map[string]interface{}, inc chan []byte)
 
 // MessageType will indicate what is the underlying type
 // of the field Interface. Then casting is necessary to use it.

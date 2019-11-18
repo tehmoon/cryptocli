@@ -34,10 +34,10 @@ func main() {
 	buff := flags.Global.MaxConcurrentStreams
 	in, out := make(chan *Message, buff), make(chan *Message, buff)
 
-	if flags.Global.Std {
-		pipeline.Add(NewStdin())
-		flags.Modules.Register(NewStdout())
-	}
+//	if flags.Global.Std {
+//		pipeline.Add(NewStdin())
+//		flags.Modules.Register(NewStdout())
+//	}
 
 	modules := flags.Modules.Modules()
 	if len(modules) == 0 {

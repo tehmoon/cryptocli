@@ -56,7 +56,17 @@ func (m *HTTPServer) SetFlagSet(fs *pflag.FlagSet, args []string) {
 }
 
 func HTTPServerHandleResponse(m *HTTPServer, w http.ResponseWriter, req *http.Request, relay *HTTPServerRelayer) {
-	outc, inc, wg := relay.Outc, relay.Inc, relay.Wg
+	mc, cb, wg := relay.MessageChannel, relay.Callback, relay.Wg
+	mc.Start(map[string]interface{}{
+		"url": req.URL.String(),
+		"headers": req.Header,
+		"host": req.Host,
+		"remote-addr": req.RemoteAddr,
+		"request-uri": req.RequestURI,
+	})
+	_, inc := cb()
+	outc := mc.Channel
+
 	defer wg.Done()
 	defer DrainChannel(inc, nil)
 	defer close(outc)
@@ -352,8 +362,8 @@ func (m *HTTPServer) Init(in, out chan *Message, global *GlobalFlags) (error) {
 		relayer := make(chan *HTTPServerRelayer)
 
 		cancel := make(chan struct{})
-		incs := make([]MessageChannel, 0)
-		outcs := make([]MessageChannel, 0)
+		cbs := make([]MessageChannelFunc, 0)
+		mcs := make([]*MessageChannel, 0)
 		donec := make(chan struct{}, global.MaxConcurrentStreams)
 		connc := make(chan struct{})
 
@@ -384,26 +394,26 @@ func (m *HTTPServer) Init(in, out chan *Message, global *GlobalFlags) (error) {
 						break LOOP
 					}
 
-					outc := make(MessageChannel)
+					mc := NewMessageChannel()
 
 					out <- &Message{
 						Type: MessageTypeChannel,
-						Interface: outc,
+						Interface: mc.Callback,
 					}
 
-					if len(incs) == 0 {
-						outcs = append(outcs, outc)
+					if len(cbs) == 0 {
+						mcs = append(mcs, mc)
 						continue
 					}
 
 					wg.Add(1)
 
-					inc := incs[0]
-					incs = incs[1:]
+					cb := cbs[0]
+					cbs = cbs[1:]
 
 					relayer <- &HTTPServerRelayer{
-						Inc: inc,
-						Outc: outc,
+						Callback: cb,
+						MessageChannel: mc,
 						Wg: wg,
 					}
 
@@ -432,25 +442,25 @@ func (m *HTTPServer) Init(in, out chan *Message, global *GlobalFlags) (error) {
 							out <- message
 							break LOOP
 						case MessageTypeChannel:
-							inc, ok := message.Interface.(MessageChannel)
+							cb, ok := message.Interface.(MessageChannelFunc)
 							if ok {
-								if len(outcs) == 0 {
-									incs = append(incs, inc)
+								if len(mcs) == 0 {
+									cbs = append(cbs, cb)
 									continue
 								}
 
 								wg.Add(1)
-								outc := outcs[0]
-								outcs = outcs[1:]
+								mc := mcs[0]
+								mcs = mcs[1:]
 
 								relayer <- &HTTPServerRelayer{
-									Inc: inc,
-									Outc: outc,
+									Callback: cb,
+									MessageChannel: mc,
 									Wg: wg,
 								}
 
 								if ! global.MultiStreams {
-									incs = append(incs, inc)
+									cbs = append(cbs, cb)
 									close(cancel)
 									wg.Wait()
 									out <- &Message{Type: MessageTypeTerminate,}
@@ -464,11 +474,12 @@ func (m *HTTPServer) Init(in, out chan *Message, global *GlobalFlags) (error) {
 		listener.Close()
 		close(connc)
 
-		for _, outc := range outcs {
-			close(outc)
+		for _, mc := range mcs {
+			close(mc.Channel)
 		}
 
-		for _, inc := range incs {
+		for _, cb := range cbs {
+			_, inc := cb()
 			DrainChannel(inc, nil)
 		}
 
@@ -484,8 +495,8 @@ func (m *HTTPServer) Init(in, out chan *Message, global *GlobalFlags) (error) {
 }
 
 type HTTPServerRelayer struct {
-	Inc MessageChannel
-	Outc MessageChannel
+	Callback MessageChannelFunc
+	MessageChannel *MessageChannel
 	Wg *sync.WaitGroup
 }
 
