@@ -63,6 +63,7 @@ func HTTPServerHandleResponse(m *HTTPServer, w http.ResponseWriter, req *http.Re
 		"host": req.Host,
 		"remote-addr": req.RemoteAddr,
 		"request-uri": req.RequestURI,
+		"addr": m.addr,
 	})
 	_, inc := cb()
 	outc := mc.Channel
@@ -70,6 +71,8 @@ func HTTPServerHandleResponse(m *HTTPServer, w http.ResponseWriter, req *http.Re
 	defer wg.Done()
 	defer DrainChannel(inc, nil)
 	defer close(outc)
+
+	log.Printf("Client %q is connected\n", req.RemoteAddr)
 
 	if m.formUpload {
 		file, _, err := req.FormFile("file")

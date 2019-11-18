@@ -212,6 +212,7 @@ func httpStartHandler(m *HTTP, cb MessageChannelFunc, mc *MessageChannel, data b
 		},
 	}
 
+	log.Printf("Opening connection to %q\n", url)
 	req, err := http.NewRequest(m.method, url, reader)
 	if err != nil {
 		err = errors.Wrap(err, "Error creating new request")

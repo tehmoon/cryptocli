@@ -19,11 +19,15 @@ const (
 )
 
 // A channel is a way to communicate between modules.
-// For now, it only holds an array of byte which represents
-// raw data.
+// The sender needs to call NewMessageChannel() in order to allocate
+// a new one. Then it passes the Callback method to the next module.
+// The Callback method is a function that returns two things:
+//   - A map[string]interface{} that is metadata associated with the channel
+//   - A chan []byte that is the raw bytes to be transfered
+// The sender must call Start() in order to unlock that callback function.
+// It is possible to pass a nil metadata, under the hood it will never be nil.
 // The sender will close the channel to signal the end of the
 // transmition.
-// The reciever takes care of creating new channels.
 type MessageChannel struct {
 	started bool
 	metadata map[string]interface{}
@@ -49,8 +53,13 @@ func NewMessageChannel() (mc *MessageChannel) {
 	return mc
 }
 
+// Callable only once
 func (mc *MessageChannel) Start(metadata map[string]interface{}) {
 	if ! mc.started {
+		if metadata = nil {
+			metadata = make(map[string]interface{})
+		}
+
 		mc.metadata = metadata
 		mc.started = true
 		mc.wg.Done()
