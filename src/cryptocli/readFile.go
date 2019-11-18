@@ -7,6 +7,8 @@ import (
 	"github.com/spf13/pflag"
 	"os"
 	"path/filepath"
+	"text/template"
+	"bytes"
 )
 
 type ReadFile struct {
@@ -18,73 +20,101 @@ func init() {
 }
 
 func (m *ReadFile) SetFlagSet(fs *pflag.FlagSet, args []string) {
-	fs.StringVar(&m.path, "path", "", "File's path")
+	fs.StringVar(&m.path , "path", "", "File's path using templates")
 }
 
 func (m *ReadFile) Init(in, out chan *Message, global *GlobalFlags) (err error) {
 	if m.path == "" {
-		return errors.Errorf("Flag %q is missing in file module", "--path")
+		return errors.Errorf("Flag %q must be present\n", "--path")
+	}
+
+	var tplPath *template.Template
+
+	tplPath, err = template.New("root").Parse(m.path)
+	if err != nil {
+		return errors.Wrap(err, "Error parsing template for \"--path\" flag")
 	}
 
 	go func(m *ReadFile, in, out chan *Message) {
 		wg := &sync.WaitGroup{}
 
 		init := false
-		outc := make(MessageChannel)
+		mc := NewMessageChannel()
 
 		out <- &Message{
 			Type: MessageTypeChannel,
-			Interface: outc,
+			Interface: mc.Callback,
 		}
 
 		LOOP: for message := range in {
 			switch message.Type {
 				case MessageTypeTerminate:
 					if ! init {
-						close(outc)
+						close(mc.Channel)
 					}
 					wg.Wait()
 					out <- message
 					break LOOP
 				case MessageTypeChannel:
-					inc, ok := message.Interface.(MessageChannel)
+					cb, ok := message.Interface.(MessageChannelFunc)
 					if ok {
 						if ! init {
 							init = true
 						} else {
-							outc = make(MessageChannel)
+							mc = NewMessageChannel()
 
 							out <- &Message{
 								Type: MessageTypeChannel,
-								Interface: outc,
+								Interface: mc.Callback,
 							}
 						}
 
-						wg.Add(2)
-						go DrainChannel(inc, wg)
-						go func(m *ReadFile, outc MessageChannel, wg *sync.WaitGroup) {
+						wg.Add(1)
+						go func() {
 							defer wg.Done()
-							defer close(outc)
 
-							file, err := os.Open(filepath.Clean(m.path))
+							mc.Start(map[string]interface{}{
+								"path": m.path,
+							})
+							metadata, inc := cb()
+							buff := bytes.NewBuffer(make([]byte, 0))
+							err := tplPath.Execute(buff, metadata)
 							if err != nil {
-								err = errors.Wrap(err, "Error opening file")
+								err = errors.Wrap(err, "Error executing template path")
 								log.Println(err.Error())
+								close(mc.Channel)
+								DrainChannel(inc, nil)
 								return
 							}
 
-							err = ReadBytesSendMessages(file, outc)
-							if err != nil {
-								err = errors.Wrap(err, "Error reading file")
-								log.Println(err.Error())
-								return
-							}
-						}(m, outc, wg)
+							p := filepath.Clean(string(buff.Bytes()[:]))
+							buff.Reset()
+
+							outc := mc.Channel
+
+							wg.Add(2)
+							go DrainChannel(inc, wg)
+							go func(m *ReadFile, outc chan []byte, wg *sync.WaitGroup) {
+								defer wg.Done()
+								defer close(outc)
+
+								file, err := os.Open(p)
+								if err != nil {
+									err = errors.Wrap(err, "Error opening file")
+									log.Println(err.Error())
+									return
+								}
+
+								err = ReadBytesSendMessages(file, outc)
+								if err != nil {
+									err = errors.Wrap(err, "Error reading file")
+									log.Println(err.Error())
+									return
+								}
+							}(m, outc, wg)
+						}()
 
 						if ! global.MultiStreams {
-							if ! init {
-								close(outc)
-							}
 							wg.Wait()
 							out <- &Message{Type: MessageTypeTerminate,}
 							break LOOP

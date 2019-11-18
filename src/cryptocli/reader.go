@@ -10,7 +10,7 @@ const (
 	ReaderMinPowerSize uint = 8
 )
 
-func ReadBytesSendMessages(r io.Reader, c MessageChannel) (error) {
+func ReadBytesSendMessages(r io.Reader, c chan []byte) (error) {
 	return ReadBytesStep(r, func(payload []byte) (bool) {
 		c <- payload
 
@@ -125,11 +125,12 @@ func (mr MessageReader) Close() (error) {
 
 type ChannelReader struct {
 	crumb []byte
-	c MessageChannel
+	c chan []byte
 }
 
+
 // Not thread safe
-func NewChannelReader(c MessageChannel) (cr *ChannelReader) {
+func NewChannelReader(c chan []byte) (cr *ChannelReader) {
 	cr = &ChannelReader{
 		crumb: make([]byte, 0),
 		c: c,

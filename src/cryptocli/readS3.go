@@ -10,6 +10,8 @@ import (
 	"log"
 	"path"
 	"io"
+	"text/template"
+	"bytes"
 )
 
 func init() {
@@ -19,11 +21,13 @@ func init() {
 type ReadS3 struct {
 	bucket string
 	path string
+	bucketTmpl *template.Template
+	pathTmpl *template.Template
 }
 
 func (m *ReadS3) SetFlagSet(fs *pflag.FlagSet, args []string) {
-	fs.StringVar(&m.bucket, "bucket", "", "Specify the bucket name")
-	fs.StringVar(&m.path, "path", "", "Object path")
+	fs.StringVar(&m.bucket, "bucket", "", "Specify the bucket name using metadata")
+	fs.StringVar(&m.path, "path", "", "Object path using metadata")
 }
 
 func (m *ReadS3) Init(in, out chan *Message, global *GlobalFlags) (err error) {
@@ -35,58 +39,102 @@ func (m *ReadS3) Init(in, out chan *Message, global *GlobalFlags) (err error) {
 		return errors.Errorf("Path %q is missing", "--bucket")
 	}
 
+	m.pathTmpl, err = template.New("root").Parse(m.path)
+	if err != nil {
+		return errors.Wrap(err, "Error parsing template for \"--path\" flag")
+	}
+
+	m.bucketTmpl, err = template.New("root").Parse(m.bucket)
+	if err != nil {
+		return errors.Wrap(err, "Error parsing template for \"--bucket\" flag")
+	}
+
 	session := session.Must(session.NewSessionWithOptions(session.Options{
 		SharedConfigState: session.SharedConfigEnable,
 	}))
-
-	s3options := &S3Options{
-		Bucket: m.bucket,
-		Path: path.Clean(m.path),
-		Session: session,
-	}
 
 	go func(m *ReadS3, in, out chan *Message) {
 		wg := &sync.WaitGroup{}
 
 		init := false
-		outc := make(MessageChannel)
+		mc := NewMessageChannel()
 
 		out <- &Message{
 			Type: MessageTypeChannel,
-			Interface: outc,
+			Interface: mc.Callback,
 		}
 
 		LOOP: for message := range in {
 			switch message.Type {
 				case MessageTypeTerminate:
 					if ! init {
-						close(outc)
+						close(mc.Channel)
 					}
 					wg.Wait()
 					out <- message
 					break LOOP
 				case MessageTypeChannel:
-					inc, ok := message.Interface.(MessageChannel)
+					cb, ok := message.Interface.(MessageChannelFunc)
 					if ok {
 						if ! init {
 							init = true
 						} else {
-							outc = make(MessageChannel)
+							mc = NewMessageChannel()
 
 							out <- &Message{
 								Type: MessageTypeChannel,
-								Interface: outc,
+								Interface: mc.Callback,
 							}
 						}
 
-						wg.Add(2)
-						go DrainChannel(inc, wg)
-						go ReadS3StartOut(outc, s3options, wg)
+						wg.Add(1)
+						go func() {
+							defer wg.Done()
+
+							mc.Start(map[string]interface{}{
+								"path": m.path,
+								"bucket": m.bucket,
+							})
+							metadata, inc := cb()
+							buff := bytes.NewBuffer(make([]byte, 0))
+							err := m.pathTmpl.Execute(buff, metadata)
+							if err != nil {
+								err = errors.Wrap(err, "Error executing template path")
+								log.Println(err.Error())
+								close(mc.Channel)
+								DrainChannel(inc, nil)
+								return
+							}
+
+							p := path.Clean(string(buff.Bytes()[:]))
+							buff.Reset()
+
+							err = m.bucketTmpl.Execute(buff, metadata)
+							if err != nil {
+								err = errors.Wrap(err, "Error executing template bucket")
+								log.Println(err.Error())
+								close(mc.Channel)
+								DrainChannel(inc, nil)
+								return
+							}
+
+							b := string(buff.Bytes()[:])
+							buff.Reset()
+
+							outc := mc.Channel
+
+							s3options := &S3Options{
+								Bucket: b,
+								Path: path.Clean(p),
+								Session: session,
+							}
+
+							wg.Add(2)
+							go DrainChannel(inc, wg)
+							go ReadS3StartOut(outc, s3options, wg)
+						}()
 
 						if ! global.MultiStreams {
-							if ! init {
-								close(outc)
-							}
 							wg.Wait()
 							out <- &Message{Type: MessageTypeTerminate,}
 							break LOOP
@@ -104,7 +152,7 @@ func (m *ReadS3) Init(in, out chan *Message, global *GlobalFlags) (err error) {
 	return nil
 }
 
-func ReadS3StartOut(outc MessageChannel, options *S3Options, wg *sync.WaitGroup) {
+func ReadS3StartOut(outc chan []byte, options *S3Options, wg *sync.WaitGroup) {
 	defer wg.Done()
 	defer close(outc)
 
@@ -126,11 +174,11 @@ func ReadS3StartOut(outc MessageChannel, options *S3Options, wg *sync.WaitGroup)
 }
 
 type S3DownloadStream struct {
-	outc MessageChannel
+	outc chan []byte
 	offset int64
 }
 
-func NewS3DownloadStream(outc MessageChannel) (*S3DownloadStream) {
+func NewS3DownloadStream(outc chan []byte) (*S3DownloadStream) {
 	return &S3DownloadStream{
 		outc: outc,
 		offset: 0,

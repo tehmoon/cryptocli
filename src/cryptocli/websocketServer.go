@@ -40,27 +40,22 @@ func (m *WebsocketServer) SetFlagSet(fs *pflag.FlagSet, args []string) {
 	fs.BoolVar(&m.text, "text", false, "Set the websocket message's metadata to text")
 }
 
-func websocketServerUpgrade(m *WebsocketServer, w http.ResponseWriter, req *http.Request, relay *WebsocketServerRelayer) {
-	outc, inc, wg := relay.Outc, relay.Inc, relay.Wg
+func websocketServerUpgrade(m *WebsocketServer, conn *websocket.Conn, req *http.Request, relay *WebsocketServerRelayer) {
+	mc, cb, wg := relay.MessageChannel, relay.Callback, relay.Wg
 	defer wg.Done()
 
-	upgrader := &websocket.Upgrader{}
-	upgrader.CheckOrigin = func(r *http.Request) bool {
-		return true
-	}
+	mc.Start(map[string]interface{}{
+		"url": req.URL.String(),
+		"headers": req.Header,
+		"host": req.Host,
+		"remote-addr": conn.RemoteAddr(),
+		"request-uri": req.RequestURI,
+		"addr": m.addr,
+	})
+	_, inc := cb()
+	outc := mc.Channel
 
-	headers := ParseHTTPHeaders(m.headers)
-	conn, err := upgrader.Upgrade(w, req, headers)
-	if m.showServerHeaders {
-		ShowHTTPServerHeaders(headers)
-	}
-	if err != nil {
-		err = errors.Wrap(err, "Fail to upgrade to websocket")
-		log.Println(err.Error())
-		close(outc)
-		DrainChannel(relay.Inc, nil)
-		return
-	}
+	log.Printf("Websocket client connected from: %q\n", conn.RemoteAddr())
 
 	conn.SetPingHandler(func(message string) error {
 		conn.SetReadDeadline(time.Now().Add(m.readTimeout))
@@ -71,7 +66,7 @@ func websocketServerUpgrade(m *WebsocketServer, w http.ResponseWriter, req *http
 	syn := &sync.WaitGroup{}
 	syn.Add(2)
 
-	go func(conn *websocket.Conn, inc MessageChannel, mode int, timeout time.Duration, doneReadC chan struct{}, wg *sync.WaitGroup) {
+	go func(conn *websocket.Conn, inc chan []byte, mode int, timeout time.Duration, doneReadC chan struct{}, wg *sync.WaitGroup) {
 		defer wg.Done()
 		defer conn.Close()
 
@@ -96,7 +91,7 @@ func websocketServerUpgrade(m *WebsocketServer, w http.ResponseWriter, req *http
 
 	}(conn, inc, m.mode, m.closeTimeout, doneReadC, syn)
 
-	go func(conn *websocket.Conn, outc MessageChannel, timeout time.Duration, doneReadC chan struct{}, wg *sync.WaitGroup) {
+	go func(conn *websocket.Conn, outc chan []byte, timeout time.Duration, doneReadC chan struct{}, wg *sync.WaitGroup) {
 		defer wg.Done()
 		defer close(outc)
 		defer close(doneReadC)
@@ -126,33 +121,43 @@ func websocketServerUpgrade(m *WebsocketServer, w http.ResponseWriter, req *http
 
 func websocketServerHandle(m *WebsocketServer, relayer chan *WebsocketServerRelayer, connc, donec, cancel chan struct{}) (func(w http.ResponseWriter, r *http.Request)) {
 	return func(w http.ResponseWriter, req *http.Request) {
-		if m.showClientHeaders {
-			ShowHTTPClientHeaders(req.Header)
-		}
-
 		donec <- struct{}{}
-
 		defer func(donec chan struct{}) {
 			<- donec
 		}(donec)
 
+		upgrader := &websocket.Upgrader{}
+		upgrader.CheckOrigin = func(req *http.Request) bool {
+			return true
+		}
+
+		headers := ParseHTTPHeaders(m.headers)
+		conn, err := upgrader.Upgrade(w, req, headers)
+		if err != nil {
+			err = errors.Wrap(err, "Fail to upgrade to websocket")
+			log.Println(err.Error())
+			return
+		}
+
+		if m.showClientHeaders {
+			ShowHTTPClientHeaders(req.Header)
+		}
+
+		if m.showServerHeaders {
+			ShowHTTPServerHeaders(headers)
+		}
+
 		select {
 			case <- cancel:
 				w.WriteHeader(500)
-				if m.showServerHeaders {
-					ShowHTTPServerHeaders(w.Header())
-				}
 				return
 			case relay, opened := <- relayer:
 				if ! opened {
 					w.WriteHeader(500)
-					if m.showServerHeaders {
-						ShowHTTPServerHeaders(w.Header())
-					}
 					return
 				}
 
-				websocketServerUpgrade(m, w, req, relay)
+				websocketServerUpgrade(m, conn, req, relay)
 				return
 			default:
 		}
@@ -161,9 +166,6 @@ func websocketServerHandle(m *WebsocketServer, relayer chan *WebsocketServerRela
 			case connc <- struct{}{}:
 			case <- cancel:
 				w.WriteHeader(500)
-				if m.showServerHeaders {
-					ShowHTTPServerHeaders(w.Header())
-				}
 				return
 		}
 
@@ -171,19 +173,13 @@ func websocketServerHandle(m *WebsocketServer, relayer chan *WebsocketServerRela
 			case relay, opened := <- relayer:
 				if ! opened {
 					w.WriteHeader(500)
-					if m.showServerHeaders {
-						ShowHTTPServerHeaders(w.Header())
-					}
 					return
 				}
 
-				websocketServerUpgrade(m, w, req, relay)
+				websocketServerUpgrade(m, conn, req, relay)
 				return
 			case <- cancel:
 				w.WriteHeader(500)
-				if m.showServerHeaders {
-					ShowHTTPServerHeaders(w.Header())
-				}
 				return
 		}
 	}
@@ -238,8 +234,8 @@ func (m *WebsocketServer) Init(in, out chan *Message, global *GlobalFlags) (erro
 		}
 		go server.Serve(listener)
 
-		incs := make([]MessageChannel, 0)
-		outcs := make([]MessageChannel, 0)
+		cbs := make([]MessageChannelFunc, 0)
+		mcs := make([]*MessageChannel, 0)
 
 		ticker := time.NewTicker(m.connectTimeout)
 
@@ -261,26 +257,26 @@ func (m *WebsocketServer) Init(in, out chan *Message, global *GlobalFlags) (erro
 						break LOOP
 					}
 
-					outc := make(MessageChannel)
+					mc := NewMessageChannel()
 
 					out <- &Message{
 						Type: MessageTypeChannel,
-						Interface: outc,
+						Interface: mc.Callback,
 					}
 
-					if len(incs) == 0 {
-						outcs = append(outcs, outc)
+					if len(cbs) == 0 {
+						mcs = append(mcs, mc)
 						continue
 					}
 
 					wg.Add(1)
 
-					inc := incs[0]
-					incs = incs[1:]
+					cb := cbs[0]
+					cbs = cbs[1:]
 
 					relayer <- &WebsocketServerRelayer{
-						Inc: inc,
-						Outc: outc,
+						Callback: cb,
+						MessageChannel: mc,
 						Wg: wg,
 					}
 
@@ -309,26 +305,25 @@ func (m *WebsocketServer) Init(in, out chan *Message, global *GlobalFlags) (erro
 							out <- message
 							break LOOP
 						case MessageTypeChannel:
-							inc, ok := message.Interface.(MessageChannel)
+							cb, ok := message.Interface.(MessageChannelFunc)
 							if ok {
 
-								if len(outcs) == 0 {
-									incs = append(incs, inc)
+								if len(mcs) == 0 {
+									cbs = append(cbs, cb)
 									continue
 								}
 
 								wg.Add(1)
-								outc := outcs[0]
-								outcs = outcs[1:]
+								mc := mcs [0]
+								mcs = mcs[1:]
 
 								relayer <- &WebsocketServerRelayer{
-									Inc: inc,
-									Outc: outc,
+									Callback: cb,
+									MessageChannel: mc,
 									Wg: wg,
 								}
 
 								if ! global.MultiStreams {
-									incs = append(incs, inc)
 									close(cancel)
 									wg.Wait()
 									out <- &Message{Type: MessageTypeTerminate,}
@@ -342,11 +337,12 @@ func (m *WebsocketServer) Init(in, out chan *Message, global *GlobalFlags) (erro
 		listener.Close()
 		close(connc)
 
-		for _, outc := range outcs {
-			close(outc)
+		for _, mc := range mcs {
+			close(mc.Channel)
 		}
 
-		for _, inc := range incs {
+		for _, cb := range cbs {
+			_, inc := cb()
 			DrainChannel(inc, nil)
 		}
 
@@ -362,8 +358,8 @@ func (m *WebsocketServer) Init(in, out chan *Message, global *GlobalFlags) (erro
 }
 
 type WebsocketServerRelayer struct {
-	Inc MessageChannel
-	Outc MessageChannel
+	Callback MessageChannelFunc
+	MessageChannel *MessageChannel
 	Wg *sync.WaitGroup
 }
 

@@ -20,7 +20,7 @@ func CopyResetBuffer(buff *bytes.Buffer) ([]byte) {
 	return payload
 }
 
-func DrainChannel(inc MessageChannel, wg *sync.WaitGroup) {
+func DrainChannel(inc chan []byte, wg *sync.WaitGroup) {
 	for range inc {}
 	if wg != nil {
 		wg.Done()
@@ -61,11 +61,11 @@ func ShowHTTPHeaders(client bool, headers http.Header) {
 	for k, values := range headers {
 		for _, value := range values {
 			if client {
-				log.Printf("Client headers sent: \"%s: %s\"\n", k, value)
+				log.Printf("Client headers: \"%s: %s\"\n", k, value)
 				continue
 			}
 
-			log.Printf("Server headers received: \"%s: %s\"\n", k, value)
+			log.Printf("Server headers: \"%s: %s\"\n", k, value)
 		}
 	}
 }

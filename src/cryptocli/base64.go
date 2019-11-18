@@ -26,30 +26,50 @@ func (m Base64) Init(in, out chan *Message, global *GlobalFlags) (error) {
 	go func(in, out chan *Message) {
 		wg := &sync.WaitGroup{}
 
+		init := false
+		mc := NewMessageChannel()
+
+		out <- &Message{
+			Type: MessageTypeChannel,
+			Interface: mc.Callback,
+		}
+
 		LOOP: for message := range in {
 			switch message.Type {
 				case MessageTypeTerminate:
+					if ! init {
+						close(mc.Channel)
+					}
 					wg.Wait()
 					out <- message
 					break LOOP
 				case MessageTypeChannel:
-					inc, ok := message.Interface.(MessageChannel)
+					cb, ok := message.Interface.(MessageChannelFunc)
 					if ok {
-						outc := make(MessageChannel)
+						if ! init {
+							init = true
+						} else {
+							mc = NewMessageChannel()
 
-						out <- &Message{
-							Type: MessageTypeChannel,
-							Interface: outc,
+							out <- &Message{
+								Type: MessageTypeChannel,
+								Interface: mc.Callback,
+							}
 						}
 
 						if m.decode {
-							startBase64Decode(inc, outc, wg)
-							continue
+							go startBase64Decode(cb, mc, wg)
+						} else if m.encode {
+							go startBase64Encode(cb, mc, wg)
 						}
 
-						if m.encode {
-							startBase64Encode(inc, outc, wg)
-							continue
+						if ! global.MultiStreams {
+							if ! init {
+								close(mc.Channel)
+							}
+							wg.Wait()
+							out <- &Message{Type: MessageTypeTerminate,}
+							break LOOP
 						}
 					}
 			}
@@ -64,9 +84,14 @@ func (m Base64) Init(in, out chan *Message, global *GlobalFlags) (error) {
 	return nil
 }
 
-func startBase64Decode(inc, outc MessageChannel, wg *sync.WaitGroup) {
+func startBase64Decode(cb MessageChannelFunc, mc *MessageChannel, wg *sync.WaitGroup) {
 	reader, writer := io.Pipe()
 	b64 := base64.NewDecoder(base64.StdEncoding, reader)
+
+	mc.Start(nil)
+	_, inc := cb()
+
+	outc := mc.Channel
 
 	wg.Add(2)
 	go func() {
@@ -96,8 +121,13 @@ func startBase64Decode(inc, outc MessageChannel, wg *sync.WaitGroup) {
 	}()
 }
 
-func startBase64Encode(inc, outc MessageChannel, wg *sync.WaitGroup) {
+func startBase64Encode(cb MessageChannelFunc, mc *MessageChannel, wg *sync.WaitGroup) {
 	reader, writer := io.Pipe()
+
+	mc.Start(nil)
+	_, inc := cb()
+
+	outc := mc.Channel
 
 	wg.Add(2)
 	go func() {

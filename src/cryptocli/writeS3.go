@@ -8,6 +8,9 @@ import (
 	"log"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
+	"bytes"
+	"text/template"
+	"path"
 )
 
 func init() {
@@ -17,15 +20,17 @@ func init() {
 type WriteS3 struct {
 	bucket string
 	path string
+	pathTmpl *template.Template
+	bucketTmpl *template.Template
 	session *session.Session
 }
 
 func (m *WriteS3) SetFlagSet(fs *pflag.FlagSet, args []string) {
-	fs.StringVar(&m.bucket, "bucket", "", "Specify the bucket name")
-	fs.StringVar(&m.path, "path", "", "Object path")
+	fs.StringVar(&m.bucket, "bucket", "", "Specify the bucket name using metadata")
+	fs.StringVar(&m.path, "path", "", "Object path using metadata")
 }
 
-func (m *WriteS3) Init(in, out chan *Message, global *GlobalFlags) (error) {
+func (m *WriteS3) Init(in, out chan *Message, global *GlobalFlags) (err error) {
 	if m.path == "" {
 		return errors.Errorf("Path %q is missing", "--path")
 	}
@@ -34,45 +39,108 @@ func (m *WriteS3) Init(in, out chan *Message, global *GlobalFlags) (error) {
 		return errors.Errorf("Path %q is missing", "--bucket")
 	}
 
+	m.pathTmpl, err = template.New("root").Parse(m.path)
+	if err != nil {
+		return errors.Wrap(err, "Error parsing template for \"--path\" flag")
+	}
+
+	m.bucketTmpl, err = template.New("root").Parse(m.bucket)
+	if err != nil {
+		return errors.Wrap(err, "Error parsing template for \"--bucket\" flag")
+	}
+
 	m.session = session.Must(session.NewSessionWithOptions(session.Options{
 		SharedConfigState: session.SharedConfigEnable,
 	}))
 
-	options := &S3Options{
-		Bucket: m.bucket,
-		Path: m.path,
-		Session: m.session,
-	}
-
 	go func(in, out chan *Message) {
 		wg := &sync.WaitGroup{}
 
-		outc := make(MessageChannel)
+		init := false
+		mc := NewMessageChannel()
 
 		out <- &Message{
 			Type: MessageTypeChannel,
-			Interface: outc,
+			Interface: mc.Callback,
 		}
 
 		LOOP: for message := range in {
 			switch message.Type {
 				case MessageTypeTerminate:
+					if ! init {
+						close(mc.Channel)
+					}
+
 					wg.Wait()
 					out <- message
 					break LOOP
 				case MessageTypeChannel:
-					inc, ok := message.Interface.(MessageChannel)
+					cb, ok := message.Interface.(MessageChannelFunc)
 					if ok {
-						wg.Add(1)
-						go s3WriteStartIn(inc, outc, options, wg)
+						if ! init {
+							init = true
+						} else {
+							mc = NewMessageChannel()
 
-						wg.Wait()
-						out <- &Message{
-							Type: MessageTypeTerminate,
+							out <- &Message{
+								Type: MessageTypeChannel,
+								Interface: mc.Callback,
+							}
 						}
-						break LOOP
-					}
 
+						wg.Add(1)
+
+						go func() {
+							defer wg.Done()
+
+							mc.Start(map[string]interface{}{
+								"path": m.path,
+								"bucket": m.bucket,
+							})
+							metadata, inc := cb()
+
+							buff := bytes.NewBuffer(make([]byte, 0))
+							err := m.pathTmpl.Execute(buff, metadata)
+							if err != nil {
+								err = errors.Wrap(err, "Error executing template path")
+								log.Println(err.Error())
+								close(mc.Channel)
+								DrainChannel(inc, nil)
+								return
+							}
+
+							p := path.Clean(string(buff.Bytes()[:]))
+							buff.Reset()
+
+							err = m.bucketTmpl.Execute(buff, metadata)
+							if err != nil {
+								err = errors.Wrap(err, "Error executing template bucket")
+								log.Println(err.Error())
+								close(mc.Channel)
+								DrainChannel(inc, nil)
+								return
+							}
+
+							b := string(buff.Bytes()[:])
+							buff.Reset()
+
+							outc := mc.Channel
+
+							options := &S3Options{
+								Bucket: b,
+								Path: p,
+								Session: m.session,
+							}
+
+							s3WriteStartIn(inc, outc, options)
+						}()
+
+						if ! global.MultiStreams {
+							wg.Wait()
+							out <- &Message{Type: MessageTypeTerminate,}
+							break LOOP
+						}
+					}
 			}
 		}
 
@@ -85,7 +153,7 @@ func (m *WriteS3) Init(in, out chan *Message, global *GlobalFlags) (error) {
 	return nil
 }
 
-func s3WriteStartIn(inc, outc MessageChannel, options *S3Options, wg *sync.WaitGroup) {
+func s3WriteStartIn(inc, outc chan []byte, options *S3Options) {
 	uploader := s3manager.NewUploader(options.Session)
 
 	reader, writer := io.Pipe()
@@ -96,8 +164,10 @@ func s3WriteStartIn(inc, outc MessageChannel, options *S3Options, wg *sync.WaitG
 		Body: reader,
 	}
 
+	wg := &sync.WaitGroup{}
+
 	wg.Add(1)
-	go func(inc MessageChannel, writer *io.PipeWriter, wg *sync.WaitGroup) {
+	go func(inc chan []byte, writer *io.PipeWriter, wg *sync.WaitGroup) {
 		defer wg.Done()
 
 		for message := range inc {
@@ -123,7 +193,7 @@ func s3WriteStartIn(inc, outc MessageChannel, options *S3Options, wg *sync.WaitG
 
 	close(outc)
 
-	wg.Done()
+	wg.Wait()
 }
 
 func NewWriteS3() (Module) {

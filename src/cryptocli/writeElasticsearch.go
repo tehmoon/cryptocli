@@ -10,6 +10,8 @@ import (
 	"sync"
 	"github.com/olivere/elastic"
 	"io"
+	"text/template"
+	"bytes"
 )
 
 func init() {
@@ -51,27 +53,76 @@ func (m *WriteElasticsearch) Init(in, out chan *Message, global *GlobalFlags) (e
 		return errors.Wrapf(err, "Err creating connection to server %s", m.server)
 	}
 
+	indexTmpl, err := template.New("root").Parse(m.index)
+	if err != nil {
+		return errors.Wrap(err, "Error parsing template for \"--index\" flag")
+	}
+
 	go func(in, out chan *Message) {
 		wg := &sync.WaitGroup{}
+
+		init := false
+		mc := NewMessageChannel()
+
+		out <- &Message{
+			Type: MessageTypeChannel,
+			Interface: mc.Callback,
+		}
 
 		LOOP: for message := range in {
 			switch message.Type {
 				case MessageTypeTerminate:
+					if ! init {
+						close(mc.Channel)
+					}
+
 					wg.Wait()
 					out <- message
 					break LOOP
 				case MessageTypeChannel:
-					inc, ok := message.Interface.(MessageChannel)
+					cb, ok := message.Interface.(MessageChannelFunc)
 					if ok {
-						outc := make(MessageChannel)
+						if ! init {
+							init = true
+						} else {
+							mc = NewMessageChannel()
 
-						out <- &Message{
-							Type: MessageTypeChannel,
-							Interface: outc,
+							out <- &Message{
+								Type: MessageTypeChannel,
+								Interface: mc.Callback,
+							}
 						}
 
 						wg.Add(1)
-						go startWriteElasticsearch(m, client, inc, outc, wg)
+						go func() {
+							defer wg.Done()
+							defer close(mc.Channel)
+
+							mc.Start(map[string]interface{}{
+								"index": m.index,
+							})
+							metadata, inc := cb()
+							defer DrainChannel(inc, nil)
+
+							buff := bytes.NewBuffer(make([]byte, 0))
+							err := indexTmpl.Execute(buff, metadata)
+							if err != nil {
+								err = errors.Wrap(err, "Error executing template index")
+								log.Println(err.Error())
+								return
+							}
+
+							index := string(buff.Bytes()[:])
+							buff.Reset()
+
+							startWriteElasticsearch(m, index, client, inc, mc.Channel)
+						}()
+
+						if ! global.MultiStreams {
+							wg.Wait()
+							out <- &Message{Type: MessageTypeTerminate,}
+							break LOOP
+						}
 					}
 			}
 		}
@@ -85,13 +136,13 @@ func (m *WriteElasticsearch) Init(in, out chan *Message, global *GlobalFlags) (e
 	return nil
 }
 
-func startWriteElasticsearch(m *WriteElasticsearch, client *elastic.Client, inc, outc MessageChannel, wg *sync.WaitGroup) {
-	defer wg.Done()
-
+func startWriteElasticsearch(m *WriteElasticsearch, index string, client *elastic.Client, inc, outc chan []byte) {
 	reader, writer := io.Pipe()
 
+	wg := &sync.WaitGroup{}
+
 	wg.Add(1)
-	go func(m *WriteElasticsearch, writer *io.PipeWriter, inc MessageChannel, wg *sync.WaitGroup) {
+	go func(m *WriteElasticsearch, index string, writer *io.PipeWriter, inc chan []byte, wg *sync.WaitGroup) {
 		defer wg.Done()
 		defer DrainChannel(inc, nil)
 		defer writer.Close()
@@ -116,7 +167,7 @@ func startWriteElasticsearch(m *WriteElasticsearch, client *elastic.Client, inc,
 				})
 
 				data := &WriteElasticsearchInput{
-					Index: m.index,
+					Index: index,
 					Source: (*json.RawMessage)(&source),
 				}
 
@@ -129,12 +180,11 @@ func startWriteElasticsearch(m *WriteElasticsearch, client *elastic.Client, inc,
 				return
 			}
 		}
-	}(m, writer, inc, wg)
+	}(m, index, writer, inc, wg)
 
 	wg.Add(1)
-	go func(m *WriteElasticsearch, client *elastic.Client, reader *io.PipeReader, outc MessageChannel, wg *sync.WaitGroup) {
+	go func(m *WriteElasticsearch, client *elastic.Client, index string, reader *io.PipeReader, outc chan []byte, wg *sync.WaitGroup) {
 		defer wg.Done()
-		defer close(outc)
 		defer reader.Close()
 
 		//TODO: uuid name
@@ -170,7 +220,7 @@ func startWriteElasticsearch(m *WriteElasticsearch, client *elastic.Client, inc,
 			}
 
 			if data.Index == "" {
-				data.Index = m.index
+				data.Index = index
 			}
 
 			processor.Add(elastic.NewBulkIndexRequest().
@@ -178,7 +228,9 @@ func startWriteElasticsearch(m *WriteElasticsearch, client *elastic.Client, inc,
 				Id(data.Id).
 				Doc(data.Source))
 		}
-	}(m, client, reader, outc, wg)
+	}(m, client, index, reader, outc, wg)
+
+	wg.Wait()
 }
 
 func NewWriteElasticsearch() (Module) {
@@ -206,7 +258,7 @@ type WriteElasticsearchInput struct {
 	Source *json.RawMessage `json:"_source"`
 }
 
-func WriteElasticsearchAfterFunc(outc MessageChannel) elastic.BulkAfterFunc {
+func WriteElasticsearchAfterFunc(outc chan []byte) elastic.BulkAfterFunc {
 	return func(executionId int64, requests []elastic.BulkableRequest, response *elastic.BulkResponse, err error) {
 		if err != nil {
 			log.Printf("Found error in after: %s\n", err.Error())

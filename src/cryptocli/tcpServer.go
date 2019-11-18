@@ -23,20 +23,30 @@ type TCPServer struct {
 }
 
 type TCPServerRelayer struct {
-	Outc MessageChannel
-	Inc MessageChannel
+	Callback MessageChannelFunc
+	MessageChannel *MessageChannel
 	Wg *sync.WaitGroup
 }
 
 func tcpServerHandler(conn net.Conn, m *TCPServer, relay *TCPServerRelayer) {
-	inc, outc, wg := relay.Inc, relay.Outc, relay.Wg
+	mc, cb, wg := relay.MessageChannel, relay.Callback, relay.Wg
 	defer wg.Done()
 
-	syn := &sync.WaitGroup{}
-	syn.Add(2)
+	mc.Start(map[string]interface{}{
+		"local-addr": conn.RemoteAddr().String(),
+		"remote-addr": conn.RemoteAddr().String(),
+		"addr": m.addr,
+	})
 
-	go func(conn net.Conn, inc MessageChannel, wg *sync.WaitGroup) {
-		defer wg.Done()
+	_, inc := cb()
+	outc := mc.Channel
+
+	log.Printf("Client %q is connected\n", conn.LocalAddr().String())
+
+	syn := &sync.WaitGroup{}
+	syn.Add(1)
+
+	go func(conn net.Conn, inc chan []byte, wg *sync.WaitGroup) {
 		defer conn.Close()
 
 		for payload := range inc {
@@ -51,9 +61,10 @@ func tcpServerHandler(conn net.Conn, m *TCPServer, relay *TCPServerRelayer) {
 		DrainChannel(inc, nil)
 	}(conn, inc, syn)
 
-	go func(conn net.Conn, outc MessageChannel, timeout time.Duration, wg *sync.WaitGroup) {
+	go func(conn net.Conn, outc chan []byte, timeout time.Duration, wg *sync.WaitGroup) {
 		defer wg.Done()
 		defer close(outc)
+		defer conn.Close()
 
 		conn.SetReadDeadline(time.Now().Add(timeout))
 
@@ -75,7 +86,6 @@ func tcpServerHandler(conn net.Conn, m *TCPServer, relay *TCPServerRelayer) {
 
 func tcpServerServe(conn net.Conn, m *TCPServer, relayer chan *TCPServerRelayer, connc, donec, cancel chan struct{}) {
 	donec <- struct{}{}
-
 	defer func(donec chan struct{}) {
 		<- donec
 	}(donec)
@@ -190,8 +200,8 @@ func (m *TCPServer) Init(in, out chan *Message, global *GlobalFlags) (error) {
 
 		ticker := time.NewTicker(m.connectTimeout)
 
-		incs := make([]MessageChannel, 0)
-		outcs := make([]MessageChannel, 0)
+		cbs := make([]MessageChannelFunc, 0)
+		mcs := make([]*MessageChannel, 0)
 
 		LOOP: for {
 			select {
@@ -210,26 +220,26 @@ func (m *TCPServer) Init(in, out chan *Message, global *GlobalFlags) (error) {
 						break LOOP
 					}
 
-					outc := make(MessageChannel)
+					mc := NewMessageChannel()
 
 					out <- &Message{
 						Type: MessageTypeChannel,
-						Interface: outc,
+						Interface: mc.Callback,
 					}
 
-					if len(incs) == 0 {
-						outcs = append(outcs, outc)
+					if len(cbs) == 0 {
+						mcs = append(mcs, mc)
 						continue
 					}
 
 					wg.Add(1)
 
-					inc := incs[0]
-					incs = incs[1:]
+					cb := cbs[0]
+					cbs = cbs[1:]
 
 					relayer <- &TCPServerRelayer{
-						Inc: inc,
-						Outc: outc,
+						Callback: cb,
+						MessageChannel: mc,
 						Wg: wg,
 					}
 
@@ -258,25 +268,24 @@ func (m *TCPServer) Init(in, out chan *Message, global *GlobalFlags) (error) {
 							out <- message
 							break LOOP
 						case MessageTypeChannel:
-							inc, ok := message.Interface.(MessageChannel)
+							cb, ok := message.Interface.(MessageChannelFunc)
 							if ok {
-								if len(outcs) == 0 {
-									incs = append(incs, inc)
+								if len(mcs) == 0 {
+									cbs = append(cbs, cb)
 									continue
 								}
 
 								wg.Add(1)
-								outc := outcs[0]
-								outcs = outcs[1:]
+								mc := mcs[0]
+								mcs = mcs[1:]
 
 								relayer <- &TCPServerRelayer{
-									Inc: inc,
-									Outc: outc,
+									Callback: cb,
+									MessageChannel: mc,
 									Wg: wg,
 								}
 
 								if ! global.MultiStreams {
-									incs = append(incs, inc)
 									close(cancel)
 									wg.Wait()
 									out <- &Message{Type: MessageTypeTerminate,}
@@ -290,11 +299,12 @@ func (m *TCPServer) Init(in, out chan *Message, global *GlobalFlags) (error) {
 		listener.Close()
 		close(connc)
 
-		for _, outc := range outcs {
-			close(outc)
+		for _, mc := range mcs {
+			close(mc.Channel)
 		}
 
-		for _, inc := range incs {
+		for _, cb := range cbs {
+			_, inc := cb()
 			DrainChannel(inc, nil)
 		}
 

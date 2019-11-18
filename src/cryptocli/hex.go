@@ -25,28 +25,53 @@ func (m *Hex) Init(in, out chan *Message, global *GlobalFlags) (error) {
 	go func(in, out chan *Message) {
 		wg := &sync.WaitGroup{}
 
+		init := false
+		mc := NewMessageChannel()
+
+		out <- &Message{
+			Type: MessageTypeChannel,
+			Interface: mc.Callback,
+		}
+
 		LOOP: for message := range in {
 			switch message.Type {
 				case MessageTypeTerminate:
+					if ! init {
+						close(mc.Channel)
+					}
+
 					wg.Wait()
 					out <- message
 					break LOOP
 				case MessageTypeChannel:
-					inc, ok := message.Interface.(MessageChannel)
+					cb, ok := message.Interface.(MessageChannelFunc)
 					if ok {
-						outc := make(MessageChannel)
+						if ! init {
+							init = true
+						} else {
+							mc = NewMessageChannel()
 
-						out <- &Message{
-							Type: MessageTypeChannel,
-							Interface: outc,
+							out <- &Message{
+								Type: MessageTypeChannel,
+								Interface: mc.Callback,
+							}
 						}
+
 						wg.Add(1)
 						if m.encode {
-							go startHexEncode(inc, outc, wg)
-							continue
+							go startHexEncode(cb, mc, wg)
+						} else {
+							go startHexDecode(cb, mc, wg)
 						}
 
-						go startHexDecode(inc, outc, wg)
+						if ! global.MultiStreams {
+							if ! init {
+								close(mc.Channel)
+							}
+							wg.Wait()
+							out <- &Message{Type: MessageTypeTerminate,}
+							break LOOP
+						}
 					}
 
 			}
@@ -62,7 +87,11 @@ func (m *Hex) Init(in, out chan *Message, global *GlobalFlags) (error) {
 }
 
 // TODO: limit the buffer size because it allocates * 2 right now.
-func startHexEncode(inc, outc MessageChannel, wg *sync.WaitGroup) {
+func startHexEncode(cb MessageChannelFunc, mc *MessageChannel, wg *sync.WaitGroup) {
+	mc.Start(nil)
+	_, inc := cb()
+	outc := mc.Channel
+
 	for payload := range inc {
 		buff := make([]byte, hex.EncodedLen(len(payload)))
 		hex.Encode(buff, payload)
@@ -74,7 +103,11 @@ func startHexEncode(inc, outc MessageChannel, wg *sync.WaitGroup) {
 	wg.Done()
 }
 
-func startHexDecode(inc, outc MessageChannel, wg *sync.WaitGroup) {
+func startHexDecode(cb MessageChannelFunc, mc *MessageChannel, wg *sync.WaitGroup) {
+	mc.Start(nil)
+	_, inc := cb()
+	outc := mc.Channel
+
 	var (
 		crumb byte
 		set bool

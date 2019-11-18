@@ -34,112 +34,119 @@ func (m *Fork) Init(in, out chan *Message, global *GlobalFlags) (error) {
 		wg := &sync.WaitGroup{}
 
 		init := false
-		outc := make(MessageChannel)
+		mc := NewMessageChannel()
 
 		out <- &Message{
 			Type: MessageTypeChannel,
-			Interface: outc,
+			Interface: mc.Callback,
 		}
 
 		LOOP: for message := range in {
 			switch message.Type {
 				case MessageTypeTerminate:
 					if ! init {
-						close(outc)
+						close(mc.Channel)
 					}
 					wg.Wait()
 					out <- message
 					break LOOP
 				case MessageTypeChannel:
-					inc, ok := message.Interface.(MessageChannel)
+					cb, ok := message.Interface.(MessageChannelFunc)
 					if ok {
 						if ! init {
 							init = true
 						} else {
-							outc = make(MessageChannel)
+							mc = NewMessageChannel()
 
 							out <- &Message{
 								Type: MessageTypeChannel,
-								Interface: outc,
+								Interface: mc.Callback,
 							}
 						}
 
-						cmd := exec.Command(args[0], args[1:]...)
-						cmd.Env = make([]string, 0)
-
-						cmdstdin, stdin, err := os.Pipe()
-						if err != nil {
-							err = errors.Wrap(err, "Error creating pipes for stdin in fork module")
-							log.Println(err.Error())
-							wg.Add(1)
-							go DrainChannel(inc, wg)
-							continue
-						}
-
-						stdout, cmdstdout, err := os.Pipe()
-						if err != nil {
-							err = errors.Wrap(err, "Error creating pipes for stdout in fork module")
-							log.Println(err.Error())
-							wg.Add(1)
-							go DrainChannel(inc, wg)
-							continue
-						}
-
-						cmd.Stdin = cmdstdin
-						cmd.Stdout = cmdstdout
-
-						log.Printf("Executing %q with %v in fork module\n", args[0], args[1:])
-						cancel := make(chan struct{})
-
-						wg.Add(3)
-						go func() {
-							err := cmd.Run()
-							if err != nil {
-								err = errors.Wrap(err, "Error executing command")
-								log.Println(err.Error())
-							}
-							cmdstdout.Close()
-							close(cancel)
-							wg.Done()
-						}()
-
-						go func(stdout io.Reader, outc MessageChannel, wg *sync.WaitGroup) {
-							defer wg.Done()
-							defer close(outc)
-							err := ReadBytesSendMessages(stdout, outc)
-							if err != nil {
-								err = errors.Wrap(err, "Error executing command")
-								log.Println(err.Error())
-							}
-						}(stdout, outc, wg)
-
+						wg.Add(1)
 						go func() {
 							defer wg.Done()
-							defer stdin.Close()
-							defer DrainChannel(inc, nil)
 
-							LOOP: for {
-								select {
-									case payload, opened := <- inc:
-										if ! opened {
-											break LOOP
-										}
+							mc.Start(nil)
+							_, inc := cb()
+							outc := mc.Channel
 
-										_, err := stdin.Write(payload)
-										if err != nil {
-											err = errors.Wrap(err, "Error writing to forked command")
-											log.Println(err.Error())
-											break LOOP
-										}
-									case <- cancel:
-										break LOOP
+							cmd := exec.Command(args[0], args[1:]...)
+							cmd.Env = make([]string, 0)
+
+							cmdstdin, stdin, err := os.Pipe()
+							if err != nil {
+								err = errors.Wrap(err, "Error creating pipes for stdin in fork module")
+								log.Println(err.Error())
+								DrainChannel(inc, nil)
+								return
+							}
+
+							stdout, cmdstdout, err := os.Pipe()
+							if err != nil {
+								err = errors.Wrap(err, "Error creating pipes for stdout in fork module")
+								log.Println(err.Error())
+								DrainChannel(inc, nil)
+								return
+							}
+
+							cmd.Stdin = cmdstdin
+							cmd.Stdout = cmdstdout
+
+							log.Printf("Executing %q with %v in fork module\n", args[0], args[1:])
+							cancel := make(chan struct{})
+
+							wg.Add(3)
+							go func() {
+								err := cmd.Run()
+								if err != nil {
+									err = errors.Wrap(err, "Error executing command")
+									log.Println(err.Error())
 								}
-							}
+								cmdstdout.Close()
+								close(cancel)
+								wg.Done()
+							}()
+
+							go func(stdout io.Reader, outc chan []byte, wg *sync.WaitGroup) {
+								defer wg.Done()
+								defer close(outc)
+								err := ReadBytesSendMessages(stdout, outc)
+								if err != nil {
+									err = errors.Wrap(err, "Error executing command")
+									log.Println(err.Error())
+								}
+							}(stdout, outc, wg)
+
+							go func() {
+								defer wg.Done()
+								defer stdin.Close()
+								defer DrainChannel(inc, nil)
+
+								LOOP: for {
+									select {
+										case payload, opened := <- inc:
+											if ! opened {
+												break LOOP
+											}
+
+											_, err := stdin.Write(payload)
+											if err != nil {
+												err = errors.Wrap(err, "Error writing to forked command")
+												log.Println(err.Error())
+												break LOOP
+											}
+										case <- cancel:
+											break LOOP
+									}
+								}
+							}()
 						}()
 
 						if ! global.MultiStreams {
 							if ! init {
-								close(outc)
+								close(mc.Channel)
 							}
 							wg.Wait()
 							out <- &Message{Type: MessageTypeTerminate,}

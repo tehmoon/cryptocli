@@ -74,25 +74,46 @@ func (m *Dgst) Init(in, out chan *Message, global *GlobalFlags) (error) {
 	go func(in, out chan *Message) {
 		wg := &sync.WaitGroup{}
 
+		init := false
+		mc := NewMessageChannel()
+
+		out <- &Message{
+			Type: MessageTypeChannel,
+			Interface: mc.Callback,
+		}
+
 		LOOP: for message := range in {
 			switch message.Type {
 				case MessageTypeTerminate:
+					if ! init {
+						close(mc.Channel)
+					}
+
 					wg.Wait()
 					out <- message
 					break LOOP
 				case MessageTypeChannel:
-					inc, ok := message.Interface.(MessageChannel)
+					cb, ok := message.Interface.(MessageChannelFunc)
 					if ok {
-						outc := make(MessageChannel)
+						if ! init {
+							init = true
+						} else {
+							mc = NewMessageChannel()
 
-						out <- &Message{
-							Type: MessageTypeChannel,
-							Interface: outc,
+							out <- &Message{
+								Type: MessageTypeChannel,
+								Interface: mc.Callback,
+							}
 						}
+
 						hash := m.hash.New()
 						wg.Add(1)
 
 						go func() {
+							mc.Start(nil)
+							_, inc := cb()
+							outc := mc.Channel
+
 							for payload := range inc {
 								hash.Write(payload)
 							}
@@ -101,6 +122,15 @@ func (m *Dgst) Init(in, out chan *Message, global *GlobalFlags) (error) {
 							close(outc)
 							wg.Done()
 						}()
+
+						if ! global.MultiStreams {
+							if ! init {
+								close(mc.Channel)
+							}
+							wg.Wait()
+							out <- &Message{Type: MessageTypeTerminate,}
+							break LOOP
+						}
 					}
 
 			}

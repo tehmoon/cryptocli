@@ -9,6 +9,8 @@ import (
 	"sync"
 	"log"
 	"crypto/tls"
+	"text/template"
+	"bytes"
 )
 
 func init() {
@@ -26,6 +28,7 @@ type HTTP struct {
 	password string
 	showClientHeaders bool
 	showServerHeaders bool
+	tplUrl *template.Template
 }
 
 func (m *HTTP) SetFlagSet(fs *pflag.FlagSet, args []string) {
@@ -41,7 +44,7 @@ func (m *HTTP) SetFlagSet(fs *pflag.FlagSet, args []string) {
 	fs.StringVar(&m.password, "password", "", "Specify the required password for basic auth")
 }
 
-func (m *HTTP) Init(in, out chan *Message, global *GlobalFlags) (error) {
+func (m *HTTP) Init(in, out chan *Message, global *GlobalFlags) (err error) {
 	if m.readTimeout <= 0 {
 		return errors.Errorf("Flag %q has to be greater that 0", "--read-timeout")
 	}
@@ -54,46 +57,52 @@ func (m *HTTP) Init(in, out chan *Message, global *GlobalFlags) (error) {
 		return errors.Errorf("Flag %q is required when %q is set", "--user", "--password")
 	}
 
+	m.tplUrl, err = template.New("root").Parse(m.url)
+	if err != nil {
+		return errors.Wrap(err, "Error parsing template for \"--url\" flag")
+	}
+
 	go func(in, out chan *Message) {
 		wg := &sync.WaitGroup{}
 
 		init := false
-		outc := make(MessageChannel)
+		mc := NewMessageChannel()
 
 		out <- &Message{
 			Type: MessageTypeChannel,
-			Interface: outc,
+			Interface: mc.Callback,
 		}
 
 		LOOP: for message := range in {
 			switch message.Type {
 				case MessageTypeTerminate:
 					if ! init {
-						close(outc)
+						close(mc.Channel)
 					}
+
 					wg.Wait()
 					out <- message
 					break LOOP
 				case MessageTypeChannel:
-					inc, ok := message.Interface.(MessageChannel)
+					cb, ok := message.Interface.(MessageChannelFunc)
 					if ok {
 						if ! init {
 							init = true
 						} else {
-							outc = make(MessageChannel)
+							mc = NewMessageChannel()
 
 							out <- &Message{
 								Type: MessageTypeChannel,
-								Interface: outc,
+								Interface: mc.Callback,
 							}
 						}
 
 						wg.Add(1)
-						go httpStartHandler(m, inc, outc, m.data, wg)
+						go httpStartHandler(m, cb, mc, wg)
 
 						if ! global.MultiStreams {
 							if ! init {
-								close(outc)
+								close(mc.Channel)
 							}
 							wg.Wait()
 							out <- &Message{Type: MessageTypeTerminate,}
@@ -113,17 +122,35 @@ func (m *HTTP) Init(in, out chan *Message, global *GlobalFlags) (error) {
 	return nil
 }
 
-func httpStartHandler(m *HTTP, inc, outc MessageChannel, data bool, wg *sync.WaitGroup) {
+func httpStartHandler(m *HTTP, cb MessageChannelFunc, mc *MessageChannel,  wg *sync.WaitGroup) {
 	defer wg.Done()
-	defer close(outc)
 
 	reader, writer := io.Pipe()
 	cancel := make(chan error)
 	goahead := &sync.WaitGroup{}
 
+	mc.Start(nil)
+	metadata, inc := cb()
+
+	buff := bytes.NewBuffer(make([]byte, 0))
+	err := m.tplUrl.Execute(buff, metadata)
+	if err != nil {
+		err = errors.Wrap(err, "Error executing template url")
+		log.Println(err.Error())
+		close(mc.Channel)
+		DrainChannel(inc, nil)
+		return
+	}
+
+	url := string(buff.Bytes()[:])
+	buff.Reset()
+
+	outc := mc.Channel
+	defer close(outc)
+
 	wg.Add(1)
 	goahead.Add(1)
-	go func(inc MessageChannel, writer *io.PipeWriter, wg *sync.WaitGroup, goahead *sync.WaitGroup, cancel chan error) {
+	go func(inc chan []byte, writer *io.PipeWriter, wg *sync.WaitGroup, goahead *sync.WaitGroup, cancel chan error) {
 		defer wg.Done()
 		defer DrainChannel(inc, nil)
 		defer func(cancel chan error) {
@@ -132,7 +159,7 @@ func httpStartHandler(m *HTTP, inc, outc MessageChannel, data bool, wg *sync.Wai
 			}
 		}(cancel)
 
-		if ! data {
+		if ! m.data {
 			goahead.Done()
 			writer.Close()
 			return
@@ -185,7 +212,8 @@ func httpStartHandler(m *HTTP, inc, outc MessageChannel, data bool, wg *sync.Wai
 		},
 	}
 
-	req, err := http.NewRequest(m.method, m.url, reader)
+	log.Printf("Opening connection to %q\n", url)
+	req, err := http.NewRequest(m.method, url, reader)
 	if err != nil {
 		err = errors.Wrap(err, "Error creating new request")
 		cancel <- err

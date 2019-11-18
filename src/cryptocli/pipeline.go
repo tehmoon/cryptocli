@@ -100,20 +100,23 @@ func (p Pipeline) Init(pipeIn, pipeOut chan *Message, global *GlobalFlags) (err 
 }
 
 func WriteToPipeline(pipe string, data []byte) error {
-	in, out, _, err := InitPipeline(pipe, &GlobalFlags{})
+	in, out, _, err := InitPipeline(pipe, &GlobalFlags{
+		MultiStreams: false,
+		MaxConcurrentStreams: 1,
+	})
 	if err != nil {
 		return errors.Wrap(err, "Error starting pipeline")
 	}
 
-	outc := make(MessageChannel)
+	mc := NewMessageChannel()
 	out <- &Message{
 		Type: MessageTypeChannel,
-		Interface: outc,
+		Interface: mc.Callback,
 	}
 
 	message, opened := <- in
 	if ! opened {
-		close(outc)
+		close(mc.Channel)
 		close(out)
 		return errors.New("Pipeline is empty!")
 	}
@@ -123,19 +126,28 @@ func WriteToPipeline(pipe string, data []byte) error {
 	LOOP: for {
 		switch message.Type {
 			case MessageTypeTerminate:
-				close(outc)
+				close(mc.Channel)
 				wg.Wait()
 				out <- message
 				break LOOP
 			case MessageTypeChannel:
-				inc, ok := message.Interface.(MessageChannel)
+				cb, ok := message.Interface.(MessageChannelFunc)
 				if ok {
 					wg.Add(1)
-					go DrainChannel(inc, wg)
+					go func() {
+						defer wg.Done()
+						mc.Start(nil)
+						_, inc := cb()
 
-					outc <- data
-					close(outc)
+						wg.Add(1)
+						go DrainChannel(inc, wg)
+
+						mc.Channel <- data
+						close(mc.Channel)
+					}()
+
 					wg.Wait()
+
 					out <- &Message{
 						Type: MessageTypeTerminate,
 					}
@@ -159,15 +171,16 @@ func ReadAllPipeline(pipe string) ([]byte, error) {
 
 	buff := bytes.NewBuffer(nil)
 
-	outc := make(MessageChannel)
+	mc := NewMessageChannel()
+
 	out <- &Message{
 		Type: MessageTypeChannel,
-		Interface: outc,
+		Interface: mc.Callback,
 	}
 
 	message, opened := <- in
 	if ! opened {
-		close(outc)
+		close(mc.Channel)
 		close(out)
 		return nil, errors.New("Pipeline is empty!")
 	}
@@ -175,17 +188,20 @@ func ReadAllPipeline(pipe string) ([]byte, error) {
 	LOOP: for {
 		switch message.Type {
 			case MessageTypeTerminate:
-				close(outc)
+				close(mc.Channel)
 				out <- message
 				break LOOP
 			case MessageTypeChannel:
-				inc, ok := message.Interface.(MessageChannel)
+				cb, ok := message.Interface.(MessageChannelFunc)
 				if ok {
+					mc.Start(nil)
+					_, inc := cb()
+
 					for payload := range inc {
 						buff.Write(payload)
 					}
 
-					close(outc)
+					close(mc.Channel)
 					out <- &Message{
 						Type: MessageTypeTerminate,
 					}

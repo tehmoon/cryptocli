@@ -80,7 +80,7 @@ Here's a list of builtins:
 var user_id = ""
 var url = ""
 
-function start() {
+function start(metadata) {
   // Write to stdout
   writeToPipe("stdout", "What's your name: ")
 
@@ -95,7 +95,10 @@ function start() {
   log("visited " + url)
 }
 
-function callback() {
+function callback(metadata) {
+  // Display some metadata from the pipe() function
+  log("metadata: " + toJSON(metadata))
+
   // Write to the tcp connection
   write(user_id + " wants to know what website you want to visit: ")
 
@@ -118,7 +121,126 @@ function callback() {
 
 As you can see, it's pretty awesome :)
 
-## Examples
+## Metadata
+
+Metadata is a new addition where modules when they send channels, add metadata about the current state.
+
+It's using [go templates](https://godoc.org/text/template) and you can use it with some flags as long as the previous chained module will send some metadata. For example, it is possible to add a `path` template when writing a file so you can have one file per channel.
+
+Right now, the implementation is really naive, you cannot get metadata for other modules than the previous one.
+
+### Metadata Examples
+
+HTTP redirect a client to download a file name writeFile.go on the filesystem (LFI NOT SECURE)
+```
+cryptocli \
+  -- http-server --addr :8080 --redirect-to writeFile.go \
+  -- read-file --path './{{ index . "redirect-to" }}'
+```
+
+Start an HTTP server and serve static files (LFI NOT SECURE)
+
+```
+cryptocli --multi-streams \
+  -- http-server --addr :8080 \
+  -- read-file --path './{{ index .url }}'
+```
+
+Start an HTTP server and write files depending on remote-addr
+
+```
+cryptocli --multi-streams \
+  -- null \
+  -- http-server --addr :8080 \
+  -- write-file --path './blah/{{ index . "remote-addr" }}.txt'
+```
+
+Same as above but for S3
+
+```
+cryptocli  --multi-streams \
+  -- null \
+  -- http-server --addr :8080 \
+  -- write-s3 --path '/{{ index . "remote-addr" }}' --bucket '{{ index .headers.Bucket 0 }}'
+```
+
+### Metadata Modules
+
+#### http-server
+
+```
+"redirect-to": string
+"url": string
+"headers": []string
+"host": string
+"remote-addr": string
+"request-uri": string
+"addr": string
+```
+
+#### query-elasticsearch
+
+```
+"query": string
+"index": string
+"from": string
+"to": string
+"aggregation": string
+"timestamp-field": string
+```
+
+#### read-file
+
+```
+"path": string
+```
+
+#### read-s3
+
+```
+"path": string
+"bucket": string
+```
+
+#### tcp-server
+
+```
+"local-addr": string
+"remote-addr": string
+"addr": string
+```
+
+#### websocket-server
+
+```
+"url": string
+"headers": []string
+"host": string
+"remote-addr": string
+"request-uri": string
+"addr": string
+```
+
+#### write-elasticsearch
+
+```
+"index": string
+```
+
+#### write-file
+
+```
+"path": string
+```
+
+#### write-s3
+
+```
+"path": string
+"bucket": string
+```
+
+## Cryptocli Examples
 
 ### Websocket reverse shell
 
@@ -347,130 +469,67 @@ Usage of ./src/cryptocli/cryptocli: [options] -- <module> [options] -- <module> 
       --std                          Read from stdin and writes to stdout instead of setting both modules
       --version                      Show version and exits
 List of all modules:
-  tcp-server: Listens TCP and wait for a single connection to complete
-  tee: Create a new one way pipeline to copy the data over
-  fork: Start a program and attach stdin and stdout to the pipeline
-  gunzip: Gunzip de-compress
-  stdin: Reads from stdin
-  tcp: Connects to TCP
-  lower: Lowercase all ascii characters
-  upper: Uppercase all ascii characters
-  unzip: Buffer the zip file to disk and read selected file patterns.
-  websocket: Connect using the websocket protocol
-  write-file: Writes to a file.
-  env: Read an environment variable
-  http-server: Create an http web webserver
-  pwn: Start a javascript VM to control input/output
   read-file: Read file from filesystem
-  base64: Base64 decode or encode
-  gzip: Gzip compress
-  query-elasticsearch: Send query to elasticsearch cluster and output result in json line
-  write-elasticsearch: Insert to elasticsearch from JSON
-  aes-gcm: AES-GCM encryption/decryption
-  dgst: Dgst decode or encode
-  websocket-server: Create an http websocket server
-  write-s3: uploads a file to s3
-  read-s3: Read a file from s3
-  stdout: Writes to stdout
-  byte: Byte manipulation module
-  hex: Hex encoding/decoding
+  http-server: Create an http web webserver
   http: Makes HTTP requests
+  query-elasticsearch: Send query to elasticsearch cluster and output result in json line
+  dgst: Dgst decode or encode
+  pwn: Start a javascript VM to control input/output
+  gunzip: Gunzip de-compress
+  gzip: Gzip compress
+  lower: Lowercase all ascii characters
+  stdin: Reads from stdin
+  upper: Uppercase all ascii characters
+  write-s3: uploads a file to s3
+  fork: Start a program and attach stdin and stdout to the pipeline
+  tcp: Connects to TCP
+  tee: Create a new one way pipeline to copy the data over
+  websocket: Connect using the websocket protocol
   null: Discard all incoming data
+  stdout: Writes to stdout
+  unzip: Buffer the zip file to disk and read selected file patterns.
+  websocket-server: Create an http websocket server
+  aes-gcm: AES-GCM encryption/decryption
+  hex: Hex encoding/decoding
+  write-elasticsearch: Insert to elasticsearch from JSON
+  base64: Base64 decode or encode
+  env: Read an environment variable
+  read-s3: Read a file from s3
+  tcp-server: Listens TCP and wait for a single connection to complete
+  write-file: Writes to a file.
+  byte: Byte manipulation module
 ```
 
 ### Modules
 
 ```
-Usage of module "tcp-server":
-      --certificate string         Path to certificate in PEM format
-      --connect-timeout duration   Max amount of time to wait for a potential connection when pipeline is closing (default 30s)
-      --key string                 Path to private key in PEM format
-      --listen string              Listen on addr:port. If port is 0, random port will be assigned
-      --read-timeout duration      Amout of time to wait reading from the connection (default 15s)
-```
-```
-Usage of module "tee":
-      --pipe string   Pipeline definition
-```
-```
-Usage of module "fork":
-```
-```
-Usage of module "gunzip":
-```
-```
-Usage of module "stdin":
-```
-```
-Usage of module "tcp":
-      --addr string             Tcp address to connect to
-      --insecure                Don't verify certificate chain when "--servername" is set
-      --read-timeout duration   Read timeout for the tcp connection (default 3s)
-      --tls string              Use TLS with servername in client hello
-```
-```
-Usage of module "lower":
-```
-```
-Usage of module "upper":
-```
-```
-Usage of module "unzip":
-      --pattern stringArray   Read the file each time it matches a pattern. (default [.*])
-```
-```
-Usage of module "websocket":
-      --close-timeout duration   Timeout to wait for after sending the closure message (default 15s)
-      --header stringArray       Set header in the form of "header: value"
-      --insecure                 Don't verify the tls certificate chain
-      --ping-interval duration   Interval of time between ping websocket messages (default 30s)
-      --read-timeout duration    Read timeout for the websocket connection (default 15s)
-      --show-client-headers      Show client headers in the logs
-      --show-server-headers      Show server headers in the logs
-      --text                     Set the websocket message's metadata to text
-      --url string               Websocket server to connect to
-```
-```
-Usage of module "write-file":
-      --append        Append data instead of truncating when writting
-      --mode uint32   Set file's mode if created when writting (default 416)
-      --path string   File's path
-```
-```
-Usage of module "env":
-      --var string   Variable to read from
+Usage of module "read-file":
+      --path string   File's path using templates
 ```
 ```
 Usage of module "http-server":
-      --addr string                     Listen on an address
-      --connect-timeout duration        Max amount of time to wait for a potential connection when pipeline is closing (default 30s)
-      --file-upload                     Serve a HTML page on GET / and a file upload endpoint on POST /
-      --header stringArray              Set header in the form of "header: value"
-      --iddle-timeout duration          IdleTimeout is the maximum amount of time to wait for the next request when keep-alives are enabled (default 5s)
-      --password string                 Specify the required password for basic auth
-      --read-headers-timeout duration   Set the amount of time allowed to read request headers. (default 15s)
-      --read-timeout duration           Set the maximum duration for reading the entire request, including the body. (default 15s)
-      --redirect-to string              Redirect the request to where the download can begin
-      --show-client-headers             Show client headers in the logs
-      --show-server-headers             Show server headers in the logs
-      --user string                     Specify the required user for basic auth
-      --write-timeout duration          Set maximum duration before timing out writes of the response (default 15s)
+      --addr string                Listen on an address
+      --connect-timeout duration   Max amount of time to wait for a potential connection when pipeline is closing (default 30s)
+      --file-upload                Serve a HTML page on GET / and a file upload endpoint on POST /
+      --header stringArray         Set header in the form of "header: value"
+      --password string            Specify the required password for basic auth
+      --redirect-to string         Redirect the request to where the download can begin
+      --show-client-headers        Show client headers in the logs
+      --show-server-headers        Show server headers in the logs
+      --user string                Specify the required user for basic auth
 ```
 ```
-Usage of module "pwn":
-      --file-pipe "read-file --path test.js"   Read content of the file from a pipeline. IE: "read-file --path test.js"
-```
-```
-Usage of module "read-file":
-      --path string   File's path
-```
-```
-Usage of module "base64":
-      --decode   Base64 decode
-      --encode   Base64 encode
-```
-```
-Usage of module "gzip":
+Usage of module "http":
+      --data                    Read data from the stream and send it before reading the response
+      --header stringArray      Set header in the form of "header: value"
+      --insecure                Don't verify the tls certificate chain
+      --method string           HTTP Verb (default "GET")
+      --password string         Specify the required password for basic auth
+      --read-timeout duration   Read timeout for the tcp connection (default 15s)
+      --show-client-headers     Show client headers in the logs
+      --show-server-headers     Show server headers in the logs
+      --url string              HTTP server to connect to
+      --user string             Specify the required user for basic auth
 ```
 ```
 Usage of module "query-elasticsearch":
@@ -492,26 +551,68 @@ Usage of module "query-elasticsearch":
       --to string                Elasticsearch date for lt. Has not effect when "--tail" is used (default "now")
 ```
 ```
-Usage of module "write-elasticsearch":
-      --bulk-actions int          Max bulk actions when indexing (default 500)
-      --bulk-size int             Max bulk size in bytes when indexing (default 10485760)
-      --create                    Fail if the document ID already exists
-      --flush-interval duration   Max interval duration between two bulk requests (default 5s)
-      --index string              Default index to write to. Uses "_index" if found in input
-      --raw                       Use the json as the _source directly, automatically generating ids. Expects "--index" to be present
-      --server string             Specify elasticsearch server to query (default "http://localhost:9200")
-```
-```
-Usage of module "aes-gcm":
-      --128                  128 bits key (default true)
-      --256                  256 bits key
-      --decrypt              Decrypt
-      --encrypt              Encrypt
-      --password-in string   Pipeline definition to set the password
-```
-```
 Usage of module "dgst":
       --algo string   Hash algorithm to use: md5, sha1, sha256, sha512, sha3_224, sha3_256, sha3_384, sha3_512, blake2s_256, blake2b_256, blake2b_384, blake2b_512, ripemd160
+```
+```
+Usage of module "pwn":
+      --file-pipe "read-file --path test.js"   Read content of the file from a pipeline. IE: "read-file --path test.js"
+```
+```
+Usage of module "gunzip":
+```
+```
+Usage of module "gzip":
+```
+```
+Usage of module "lower":
+```
+```
+Usage of module "stdin":
+```
+```
+Usage of module "upper":
+```
+```
+Usage of module "write-s3":
+      --bucket string   Specify the bucket name using metadata
+      --path string     Object path using metadata
+```
+```
+Usage of module "fork":
+```
+```
+Usage of module "tcp":
+      --addr string             Tcp address to connect to
+      --insecure                Don't verify certificate chain when "--servername" is set
+      --read-timeout duration   Read timeout for the tcp connection (default 3s)
+      --tls string              Use TLS with servername in client hello
+```
+```
+Usage of module "tee":
+      --pipe string   Pipeline definition
+```
+```
+Usage of module "websocket":
+      --close-timeout duration   Timeout to wait for after sending the closure message (default 15s)
+      --header stringArray       Set header in the form of "header: value"
+      --insecure                 Don't verify the tls certificate chain
+      --ping-interval duration   Interval of time between ping websocket messages (default 30s)
+      --read-timeout duration    Read timeout for the websocket connection (default 15s)
+      --show-client-headers      Show client headers in the logs
+      --show-server-headers      Show server headers in the logs
+      --text                     Set the websocket message's metadata to text
+      --url string               Websocket server to connect to
+```
+```
+Usage of module "null":
+```
+```
+Usage of module "stdout":
+```
+```
+Usage of module "unzip":
+      --pattern stringArray   Read the file each time it matches a pattern. (default [.*])
 ```
 ```
 Usage of module "websocket-server":
@@ -526,26 +627,12 @@ Usage of module "websocket-server":
       --text                            Set the websocket message's metadata to text
 ```
 ```
-Usage of module "write-s3":
-      --bucket string   Specify the bucket name
-      --path string     Object path
-```
-```
-Usage of module "read-s3":
-      --bucket string   Specify the bucket name
-      --path string     Object path
-```
-```
-Usage of module "stdout":
-```
-```
-Usage of module "byte":
-      --append string       Append string to messages
-      --delimiter string    Split stream into messages delimited by specified by the regexp delimiter. Mutually exclusive with "--message-size"
-      --max-messages int    Stream x messages after skipped messages
-      --message-size int    Split stream into messages of byte length. Mutually exclusive with "--delimiter" (default 16384)
-      --prepend string      Prepend string to messages
-      --skip-messages int   Skip x messages after splitting
+Usage of module "aes-gcm":
+      --128                  128 bits key (default true)
+      --256                  256 bits key
+      --decrypt              Decrypt
+      --encrypt              Encrypt
+      --password-in string   Pipeline definition to set the password
 ```
 ```
 Usage of module "hex":
@@ -553,20 +640,51 @@ Usage of module "hex":
       --encode   Hexadecimal encode
 ```
 ```
-Usage of module "http":
-      --data                    Read data from the stream and send it before reading the response
-      --header stringArray      Set header in the form of "header: value"
-      --insecure                Don't verify the tls certificate chain
-      --method string           HTTP Verb (default "GET")
-      --password string         Specify the required password for basic auth
-      --read-timeout duration   Read timeout for the tcp connection (default 15s)
-      --show-client-headers     Show client headers in the logs
-      --show-server-headers     Show server headers in the logs
-      --url string              HTTP server to connect to
-      --user string             Specify the required user for basic auth
+Usage of module "write-elasticsearch":
+      --bulk-actions int          Max bulk actions when indexing (default 500)
+      --bulk-size int             Max bulk size in bytes when indexing (default 10485760)
+      --create                    Fail if the document ID already exists
+      --flush-interval duration   Max interval duration between two bulk requests (default 5s)
+      --index string              Default index to write to. Uses "_index" if found in input
+      --raw                       Use the json as the _source directly, automatically generating ids. Expects "--index" to be present
+      --server string             Specify elasticsearch server to query (default "http://localhost:9200")
 ```
 ```
-Usage of module "null":
+Usage of module "base64":
+      --decode   Base64 decode
+      --encode   Base64 encode
+```
+```
+Usage of module "env":
+      --var string   Variable to read from
+```
+```
+Usage of module "read-s3":
+      --bucket string   Specify the bucket name using metadata
+      --path string     Object path using metadata
+```
+```
+Usage of module "tcp-server":
+      --certificate string         Path to certificate in PEM format
+      --connect-timeout duration   Max amount of time to wait for a potential connection when pipeline is closing (default 30s)
+      --key string                 Path to private key in PEM format
+      --listen string              Listen on addr:port. If port is 0, random port will be assigned
+      --read-timeout duration      Amout of time to wait reading from the connection (default 15s)
+```
+```
+Usage of module "write-file":
+      --append        Append data instead of truncating when writting
+      --mode uint32   Set file's mode if created when writting (default 416)
+      --path string   Metadata template for file path
+```
+```
+Usage of module "byte":
+      --append string       Append string to messages
+      --delimiter string    Split stream into messages delimited by specified by the regexp delimiter. Mutually exclusive with "--message-size"
+      --max-messages int    Stream x messages after skipped messages
+      --message-size int    Split stream into messages of byte length. Mutually exclusive with "--delimiter" (default -1)
+      --prepend string      Prepend string to messages
+      --skip-messages int   Skip x messages after splitting
 ```
 
 ## Design
