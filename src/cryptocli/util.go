@@ -61,11 +61,11 @@ func ShowHTTPHeaders(client bool, headers http.Header) {
 	for k, values := range headers {
 		for _, value := range values {
 			if client {
-				log.Printf("Client headers sent: \"%s: %s\"\n", k, value)
+				log.Printf("Client headers: \"%s: %s\"\n", k, value)
 				continue
 			}
 
-			log.Printf("Server headers received: \"%s: %s\"\n", k, value)
+			log.Printf("Server headers: \"%s: %s\"\n", k, value)
 		}
 	}
 }

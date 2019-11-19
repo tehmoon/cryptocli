@@ -56,7 +56,7 @@ func NewMessageChannel() (mc *MessageChannel) {
 // Callable only once
 func (mc *MessageChannel) Start(metadata map[string]interface{}) {
 	if ! mc.started {
-		if metadata = nil {
+		if metadata == nil {
 			metadata = make(map[string]interface{})
 		}
 

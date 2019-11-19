@@ -57,6 +57,7 @@ func (m *HTTPServer) SetFlagSet(fs *pflag.FlagSet, args []string) {
 
 func HTTPServerHandleResponse(m *HTTPServer, w http.ResponseWriter, req *http.Request, relay *HTTPServerRelayer) {
 	mc, cb, wg := relay.MessageChannel, relay.Callback, relay.Wg
+	defer wg.Done()
 	mc.Start(map[string]interface{}{
 		"url": req.URL.String(),
 		"headers": req.Header,
@@ -65,11 +66,11 @@ func HTTPServerHandleResponse(m *HTTPServer, w http.ResponseWriter, req *http.Re
 		"request-uri": req.RequestURI,
 		"addr": m.addr,
 	})
-	_, inc := cb()
-	outc := mc.Channel
 
-	defer wg.Done()
+	_, inc := cb()
 	defer DrainChannel(inc, nil)
+
+	outc := mc.Channel
 	defer close(outc)
 
 	log.Printf("Client %q is connected\n", req.RemoteAddr)

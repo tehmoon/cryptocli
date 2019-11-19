@@ -30,14 +30,15 @@ type TCPServerRelayer struct {
 
 func tcpServerHandler(conn net.Conn, m *TCPServer, relay *TCPServerRelayer) {
 	mc, cb, wg := relay.MessageChannel, relay.Callback, relay.Wg
+	defer wg.Done()
+
 	mc.Start(map[string]interface{}{
 		"remote-addr": conn.RemoteAddr().String(),
 		"addr": m.addr,
 	})
+
 	_, inc := cb()
 	outc := mc.Channel
-
-	defer wg.Done()
 
 	log.Printf("Client %q is connected\n", conn.LocalAddr().String())
 
@@ -63,6 +64,7 @@ func tcpServerHandler(conn net.Conn, m *TCPServer, relay *TCPServerRelayer) {
 	go func(conn net.Conn, outc chan []byte, timeout time.Duration, wg *sync.WaitGroup) {
 		defer wg.Done()
 		defer close(outc)
+		defer conn.Close()
 
 		conn.SetReadDeadline(time.Now().Add(timeout))
 
@@ -84,7 +86,6 @@ func tcpServerHandler(conn net.Conn, m *TCPServer, relay *TCPServerRelayer) {
 
 func tcpServerServe(conn net.Conn, m *TCPServer, relayer chan *TCPServerRelayer, connc, donec, cancel chan struct{}) {
 	donec <- struct{}{}
-
 	defer func(donec chan struct{}) {
 		<- donec
 	}(donec)
