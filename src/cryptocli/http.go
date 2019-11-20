@@ -97,8 +97,7 @@ func (m *HTTP) Init(in, out chan *Message, global *GlobalFlags) (err error) {
 						}
 
 						wg.Add(1)
-						// TODO: remove m.data
-						go httpStartHandler(m, cb, mc, m.data, wg)
+						go httpStartHandler(m, cb, mc, wg)
 
 						if ! global.MultiStreams {
 							if ! init {
@@ -122,7 +121,7 @@ func (m *HTTP) Init(in, out chan *Message, global *GlobalFlags) (err error) {
 	return nil
 }
 
-func httpStartHandler(m *HTTP, cb MessageChannelFunc, mc *MessageChannel, data bool, wg *sync.WaitGroup) {
+func httpStartHandler(m *HTTP, cb MessageChannelFunc, mc *MessageChannel,  wg *sync.WaitGroup) {
 	defer wg.Done()
 
 	reader, writer := io.Pipe()
@@ -159,7 +158,7 @@ func httpStartHandler(m *HTTP, cb MessageChannelFunc, mc *MessageChannel, data b
 			}
 		}(cancel)
 
-		if ! data {
+		if ! m.data {
 			goahead.Done()
 			writer.Close()
 			return
