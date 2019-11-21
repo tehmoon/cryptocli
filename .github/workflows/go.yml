@@ -25,5 +25,5 @@ jobs:
     - name: upload
       uses: actions/upload-artifact@master
       with:
-        name: my-artifact
+        name: artifacts
         path: artifacts
