@@ -33,7 +33,7 @@ func tcpServerHandler(conn net.Conn, m *TCPServer, relay *TCPServerRelayer) {
 	defer wg.Done()
 
 	mc.Start(map[string]interface{}{
-		"local-addr": conn.RemoteAddr().String()
+		"local-addr": conn.RemoteAddr().String(),
 		"remote-addr": conn.RemoteAddr().String(),
 		"addr": m.addr,
 	})
