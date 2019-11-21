@@ -9,7 +9,7 @@
 
 IT IS BACK WITH A NEW POWERFUL DESIGN!!!
 
-Cryptocli is the ultimate tool to data manipulation and transfer between protocols and data format.
+Cryptocli is the ultimate tool to data manipulationdfsdf and transfer between protocols and data format.
 
 It is often really annoying to have to use some tools on unix, other tools on windows to do simple things.
 
