@@ -59,6 +59,7 @@ func HTTPServerHandleResponse(m *HTTPServer, w http.ResponseWriter, req *http.Re
 	mc, cb, wg := relay.MessageChannel, relay.Callback, relay.Wg
 	defer wg.Done()
 	mc.Start(map[string]interface{}{
+		"redirect-to": m.redirect,
 		"url": req.URL.String(),
 		"headers": req.Header,
 		"host": req.Host,

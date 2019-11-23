@@ -118,6 +118,25 @@ function callback() {
 
 As you can see, it's pretty awesome :)
 
+## Metadata
+
+### Examples
+
+HTTP redirect a client to download a file name writeFile.go on the filesystem
+```
+cryptocli \
+  -- http-server --addr :8080 --redirect-to writeFile.go \
+  -- read-file --path-template './{{ index . "redirect-to" }}'
+```
+
+Start an HTTP server and serve static files
+
+```
+./cryptocli --multi-streams \
+  -- http-server --addr :8080 \
+  -- read-file --path-template './{{ index .url }}'
+```
+
 ## Examples
 
 ### Websocket reverse shell
