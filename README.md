@@ -122,19 +122,28 @@ As you can see, it's pretty awesome :)
 
 ### Examples
 
-HTTP redirect a client to download a file name writeFile.go on the filesystem
+HTTP redirect a client to download a file name writeFile.go on the filesystem (LFI NOT SECURE)
 ```
 cryptocli \
   -- http-server --addr :8080 --redirect-to writeFile.go \
   -- read-file --path-template './{{ index . "redirect-to" }}'
 ```
 
-Start an HTTP server and serve static files
+Start an HTTP server and serve static files (LFI NOT SECURE)
 
 ```
-./cryptocli --multi-streams \
+cryptocli --multi-streams \
   -- http-server --addr :8080 \
   -- read-file --path-template './{{ index .url }}'
+```
+
+Start an HTTP server and write files depending on remote-addr
+
+```
+cryptocli --multi-streams \
+  -- null \
+  -- http-server --addr :8080 \
+  -- write-file --path-template './blah/{{ index . "remote-addr" }}.txt'
 ```
 
 ## Examples

@@ -45,6 +45,7 @@ func (m Stdout) Init(in, out chan *Message, global *GlobalFlags) (error) {
 					if ! init {
 						close(mc.Channel)
 					}
+
 					wg.Wait()
 					out <- message
 					break LOOP
