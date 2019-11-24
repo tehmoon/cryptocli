@@ -1,5 +1,7 @@
 name: Go
-on: [push]
+on:
+    issue_comment:
+        types: [created]
     
 jobs:
 
