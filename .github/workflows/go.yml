@@ -19,7 +19,7 @@ jobs:
     - name: Check out code into the Go module directory
       uses: actions/checkout@v1
       with:
-          ref: ${{ github.client_payload.ref }}
+          ref: ${{ github.event.client_payload.ref }}
     - name: Build
       run: |
         sh  build.sh
