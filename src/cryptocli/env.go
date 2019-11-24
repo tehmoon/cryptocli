@@ -45,6 +45,7 @@ func (m Env) Init(in, out chan *Message, global *GlobalFlags) (err error) {
 					if ! init {
 						close(mc.Channel)
 					}
+
 					wg.Wait()
 					out <- message
 					break LOOP
