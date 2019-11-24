@@ -1,7 +1,7 @@
 package main
 
 import (
-//	"bytes"
+	"bytes"
 	"github.com/tehmoon/errors"
 	"github.com/google/shlex"
 	"github.com/spf13/pflag"
@@ -151,54 +151,58 @@ func (p Pipeline) Init(pipeIn, pipeOut chan *Message, global *GlobalFlags) (err 
 //	return nil
 //}
 
-//func ReadAllPipeline(pipe string) ([]byte, error) {
-//	in, out, _, err := InitPipeline(pipe, &GlobalFlags{})
-//	if err != nil {
-//		return nil, errors.Wrap(err, "Error starting pipeline")
-//	}
-//
-//	buff := bytes.NewBuffer(nil)
-//
-//	outc := make(MessageChannel)
-//	out <- &Message{
-//		Type: MessageTypeChannel,
-//		Interface: outc,
-//	}
-//
-//	message, opened := <- in
-//	if ! opened {
-//		close(outc)
-//		close(out)
-//		return nil, errors.New("Pipeline is empty!")
-//	}
-//
-//	LOOP: for {
-//		switch message.Type {
-//			case MessageTypeTerminate:
-//				close(outc)
-//				out <- message
-//				break LOOP
-//			case MessageTypeChannel:
-//				inc, ok := message.Interface.(MessageChannel)
-//				if ok {
-//					for payload := range inc {
-//						buff.Write(payload)
-//					}
-//
-//					close(outc)
-//					out <- &Message{
-//						Type: MessageTypeTerminate,
-//					}
-//					break LOOP
-//				}
-//		}
-//	}
-//
-//	<- in
-//	close(out)
-//
-//	return buff.Bytes(), nil
-//}
+func ReadAllPipeline(pipe string) ([]byte, error) {
+	in, out, _, err := InitPipeline(pipe, &GlobalFlags{})
+	if err != nil {
+		return nil, errors.Wrap(err, "Error starting pipeline")
+	}
+
+	buff := bytes.NewBuffer(nil)
+
+	mc := NewMessageChannel()
+
+	out <- &Message{
+		Type: MessageTypeChannel,
+		Interface: mc.Callback,
+	}
+
+	message, opened := <- in
+	if ! opened {
+		close(mc.Channel)
+		close(out)
+		return nil, errors.New("Pipeline is empty!")
+	}
+
+	LOOP: for {
+		switch message.Type {
+			case MessageTypeTerminate:
+				close(mc.Channel)
+				out <- message
+				break LOOP
+			case MessageTypeChannel:
+				cb, ok := message.Interface.(MessageChannelFunc)
+				if ok {
+					mc.Start(nil)
+					_, inc := cb()
+
+					for payload := range inc {
+						buff.Write(payload)
+					}
+
+					close(mc.Channel)
+					out <- &Message{
+						Type: MessageTypeTerminate,
+					}
+					break LOOP
+				}
+		}
+	}
+
+	<- in
+	close(out)
+
+	return buff.Bytes(), nil
+}
 
 // TOOD: refact
 //// Create a pipeline and initialize it.
