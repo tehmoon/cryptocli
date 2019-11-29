@@ -36,11 +36,13 @@ func (m *Stdin) Init(in, out chan *Message, global *GlobalFlags) (error) {
 
 	go func(in, out chan *Message, mutex *StdinMutex) {
 		wg := &sync.WaitGroup{}
+
 		init := false
-		outc := make(MessageChannel)
+		mc := NewMessageChannel()
+
 		out <- &Message{
 			Type: MessageTypeChannel,
-			Interface: outc,
+			Interface: mc.Callback,
 		}
 
 		cancel := make(chan struct{})
@@ -61,29 +63,33 @@ func (m *Stdin) Init(in, out chan *Message, global *GlobalFlags) (error) {
 					switch message.Type {
 						case MessageTypeTerminate:
 							if ! init {
-								close(outc)
+								close(mc.Channel)
 							}
 							wg.Wait()
 							out <- message
 							break LOOP
 
 						case MessageTypeChannel:
-							inc, ok := message.Interface.(MessageChannel)
+							cb, ok := message.Interface.(MessageChannelFunc)
 							if ok {
 								if ! init {
 									init = true
 								} else {
-									outc = make(MessageChannel)
+									mc = NewMessageChannel()
 
 									out <- &Message{
 										Type: MessageTypeChannel,
-										Interface: outc,
+										Interface: mc.Callback,
 									}
 								}
 
 								wg.Add(1)
-								go func(inc, outc MessageChannel, mutex *StdinMutex, cancel chan struct{}, wg *sync.WaitGroup) {
+								go func(cb MessageChannelFunc, mc *MessageChannel, mutex *StdinMutex, cancel chan struct{}, wg *sync.WaitGroup) {
 									defer wg.Done()
+
+									mc.Start(nil)
+									_, inc := cb()
+									outc := mc.Channel
 
 									mutex.Lock()
 									defer mutex.Unlock()
@@ -106,7 +112,7 @@ func (m *Stdin) Init(in, out chan *Message, global *GlobalFlags) (error) {
 
 									close(outc)
 									DrainChannel(inc, nil)
-								}(inc, outc, stdinMutex, cancel, wg)
+								}(cb, mc, stdinMutex, cancel, wg)
 
 								if ! global.MultiStreams {
 									wg.Wait()

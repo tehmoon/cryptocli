@@ -17,27 +17,47 @@ func (m Gzip) Init(in, out chan *Message, global *GlobalFlags) (error) {
 	go func(in, out chan *Message) {
 		wg := &sync.WaitGroup{}
 
+		init := false
+		mc := NewMessageChannel()
+
+		out <- &Message{
+			Type: MessageTypeChannel,
+			Interface: mc.Callback,
+		}
+
 		LOOP: for message := range in {
 			switch message.Type {
 				case MessageTypeTerminate:
+					if ! init {
+						close(mc.Channel)
+					}
+
 					wg.Wait()
 					out <- message
 					break LOOP
 				case MessageTypeChannel:
-					inc, ok := message.Interface.(MessageChannel)
+					cb, ok := message.Interface.(MessageChannelFunc)
 					if ok {
-						outc := make(MessageChannel)
+						if ! init {
+							init = true
+						} else {
+							mc = NewMessageChannel()
 
-						out <- &Message{
-							Type: MessageTypeChannel,
-							Interface: outc,
+							out <- &Message{
+								Type: MessageTypeChannel,
+								Interface: mc.Callback,
+							}
 						}
+
 						wg.Add(1)
 						go func() {
 							buff := bytes.NewBuffer(nil)
 							gzipWriter := gzip.NewWriter(buff)
 
 							go func() {
+								mc.Start(nil)
+								_, inc := cb()
+
 								for payload := range inc {
 									_, err := gzipWriter.Write(payload)
 									if err != nil {
@@ -46,14 +66,23 @@ func (m Gzip) Init(in, out chan *Message, global *GlobalFlags) (error) {
 
 									gzipWriter.Flush()
 
-									outc <- CopyResetBuffer(buff)
+									mc.Channel <- CopyResetBuffer(buff)
 								}
 
-								close(outc)
+								close(mc.Channel)
 								DrainChannel(inc, nil)
 								wg.Done()
 							}()
 						}()
+
+						if ! global.MultiStreams {
+							if ! init {
+								close(mc.Channel)
+							}
+							wg.Wait()
+							out <- &Message{Type: MessageTypeTerminate,}
+							break LOOP
+						}
 					}
 
 			}

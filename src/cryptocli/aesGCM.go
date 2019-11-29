@@ -96,26 +96,52 @@ func (m *AESGCM) Init(in, out chan *Message, global *GlobalFlags) (err error) {
 	go func(in, out chan *Message) {
 		wg := &sync.WaitGroup{}
 
+		init := false
+		mc := NewMessageChannel()
+
+		out <- &Message{
+			Type: MessageTypeChannel,
+			Interface: mc.Callback,
+		}
+
 		LOOP: for message := range in {
 			switch message.Type {
 				case MessageTypeTerminate:
+					if ! init {
+						close(mc.Channel)
+					}
+
 					wg.Wait()
 					out <- message
 					break LOOP
 				case MessageTypeChannel:
-					inc, ok := message.Interface.(MessageChannel)
+					cb, ok := message.Interface.(MessageChannelFunc)
 					if ok {
-						outc := make(MessageChannel)
+						if ! init {
+							init = true
+						} else {
+							mc = NewMessageChannel()
 
-						out <- &Message{
-							Type: MessageTypeChannel,
-							Interface: outc,
+							out <- &Message{
+								Type: MessageTypeChannel,
+								Interface: mc.Callback,
+							}
 						}
+
 						wg.Add(1)
 						if m.flags.encrypt {
-							go startAesGCMEncrypt(inc, outc, m, wg)
+							go startAesGCMEncrypt(cb, mc, m, wg)
 						}	else {
-							go startAesGCMDecrypt(inc, outc, m, wg)
+							go startAesGCMDecrypt(cb, mc, m, wg)
+						}
+
+						if ! global.MultiStreams {
+							if ! init {
+								close(mc.Channel)
+							}
+							wg.Wait()
+							out <- &Message{Type: MessageTypeTerminate,}
+							break LOOP
 						}
 					}
 
@@ -131,9 +157,14 @@ func (m *AESGCM) Init(in, out chan *Message, global *GlobalFlags) (err error) {
 	return nil
 }
 
-func startAesGCMDecrypt(inc, outc MessageChannel, m *AESGCM, wg *sync.WaitGroup) {
+func startAesGCMDecrypt(cb MessageChannelFunc, mc *MessageChannel, m *AESGCM, wg *sync.WaitGroup) {
 	defer wg.Done()
+
+	mc.Start(nil)
+	_, inc := cb()
 	defer DrainChannel(inc, nil)
+
+	outc := mc.Channel
 	defer close(outc)
 
 	salt := make([]byte, 12)
@@ -206,9 +237,14 @@ func startAesGCMDecrypt(inc, outc MessageChannel, m *AESGCM, wg *sync.WaitGroup)
 	}
 }
 
-func startAesGCMEncrypt(inc, outc MessageChannel, m *AESGCM, wg *sync.WaitGroup) {
+func startAesGCMEncrypt(cb MessageChannelFunc, mc *MessageChannel, m *AESGCM, wg *sync.WaitGroup) {
 	defer wg.Done()
+
+	mc.Start(nil)
+	_, inc := cb()
 	defer DrainChannel(inc, nil)
+
+	outc := mc.Channel
 	defer close(outc)
 
 	salt := make([]byte, 12)

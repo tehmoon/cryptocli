@@ -11,6 +11,8 @@ import (
 	"github.com/olivere/elastic"
 	"io"
 	"context"
+	"bytes"
+	"text/template"
 )
 
 func init() {
@@ -71,6 +73,31 @@ func (m *QueryElasticsearch) Init(in, out chan *Message, global *GlobalFlags) (e
 		m.flags.ScrollSize = m.flags.Size
 	}
 
+	m.indexTmpl, err = template.New("root").Parse(m.flags.Index)
+	if err != nil {
+		return errors.Wrap(err, "Error parsing template for \"--index\" flag")
+	}
+
+	m.aggregationTmpl, err = template.New("root").Parse(m.flags.Aggregation)
+	if err != nil {
+		return errors.Wrap(err, "Error parsing template for \"--aggregation\" flag")
+	}
+
+	m.timestampFieldTmpl, err = template.New("root").Parse(m.flags.TimestampField)
+	if err != nil {
+		return errors.Wrap(err, "Error parsing template for \"--timestamp-field\" flag")
+	}
+
+	m.toTmpl, err = template.New("root").Parse(m.flags.To)
+	if err != nil {
+		return errors.Wrap(err, "Error parsing template for \"--to\" flag")
+	}
+
+	m.fromTmpl, err = template.New("root").Parse(m.flags.From)
+	if err != nil {
+		return errors.Wrap(err, "Error parsing template for \"--from\" flag")
+	}
+
 	setURL := elastic.SetURL(m.flags.Server)
 
 	m.client, err = elastic.NewClient(setURL, elastic.SetSniff(false))
@@ -80,34 +107,112 @@ func (m *QueryElasticsearch) Init(in, out chan *Message, global *GlobalFlags) (e
 
 	go func(m *QueryElasticsearch, in, out chan *Message) {
 		wg := &sync.WaitGroup{}
-		ctx, cancel := context.WithCancel(context.Background())
-		outc := make(MessageChannel)
+		init := false
+		mc := NewMessageChannel()
 
 		out <- &Message{
 			Type: MessageTypeChannel,
-			Interface: outc,
+			Interface: mc.Callback,
 		}
 
 		LOOP: for message := range in {
 			switch message.Type {
 				case MessageTypeTerminate:
+					if ! init {
+						close(mc.Channel)
+					}
+
 					wg.Wait()
-					cancel()
 					out <- message
 					break LOOP
 				case MessageTypeChannel:
-					inc, ok := message.Interface.(MessageChannel)
+					cb, ok := message.Interface.(MessageChannelFunc)
 					if ok {
-						wg.Add(2)
-						go DrainChannel(inc, wg)
-						go func(m *QueryElasticsearch, outc MessageChannel, wg *sync.WaitGroup, ctx context.Context) {
+						if ! init {
+							init = true
+						} else {
+							mc = NewMessageChannel()
+
+							out <- &Message{
+								Type: MessageTypeChannel,
+								Interface: mc.Callback,
+							}
+						}
+
+						wg.Add(1)
+						go func() {
 							defer wg.Done()
+							outc := mc.Channel
 							defer close(outc)
+
+							mc.Start(map[string]interface{}{
+								"query": m.flags.QueryStringQuery,
+								"index": m.flags.Index,
+								"from": m.flags.From,
+								"to": m.flags.To,
+								"aggregation": m.flags.Aggregation,
+								"timestamp-field": m.flags.TimestampField,
+							})
+
+							var flags QueryElasticsearchFlags
+							flags = *m.flags
+							metadata, inc := cb()
+							wg.Add(1)
+							go DrainChannel(inc, wg)
+
+							buff := bytes.NewBuffer(make([]byte, 0))
+
+							err := m.indexTmpl.Execute(buff, metadata)
+							if err != nil {
+								err = errors.Wrap(err, "Error executing template index")
+								log.Println(err.Error())
+								return
+							}
+							flags.Index = string(buff.Bytes()[:])
+							buff.Reset()
+
+							err = m.fromTmpl.Execute(buff, metadata)
+							if err != nil {
+								err = errors.Wrap(err, "Error executing template from")
+								log.Println(err.Error())
+								return
+							}
+							flags.From = string(buff.Bytes()[:])
+							buff.Reset()
+
+							err = m.toTmpl.Execute(buff, metadata)
+							if err != nil {
+								err = errors.Wrap(err, "Error executing template to")
+								log.Println(err.Error())
+								return
+							}
+							flags.To = string(buff.Bytes()[:])
+							buff.Reset()
+
+							err = m.aggregationTmpl.Execute(buff, metadata)
+							if err != nil {
+								err = errors.Wrap(err, "Error executing template aggregation")
+								log.Println(err.Error())
+								return
+							}
+							flags.Aggregation = string(buff.Bytes()[:])
+							buff.Reset()
+
+							err = m.timestampFieldTmpl.Execute(buff, metadata)
+							if err != nil {
+								err = errors.Wrap(err, "Error executing template timestamp-field")
+								log.Println(err.Error())
+								return
+							}
+							flags.TimestampField = string(buff.Bytes()[:])
+							buff.Reset()
+
+							ctx, cancel := context.WithCancel(context.Background())
 
 							args := &QueryElasticsearchFuncArgs{
 								Client: m.client,
-								Flags: m.flags,
-								BoolQuery: QueryElasticsearchGenerateBoolQuery(m.flags, true),
+								Flags: &flags,
+								BoolQuery: QueryElasticsearchGenerateBoolQuery(&flags, true),
 							}
 
 							ts, err := QueryElasticsearchDo(args, outc, ctx)
@@ -117,17 +222,17 @@ func (m *QueryElasticsearch) Init(in, out chan *Message, global *GlobalFlags) (e
 							}
 
 							if args.Flags.Tail {
-								ctx, cancel = context.WithTimeout(ctx, m.flags.TailMax)
+								ctx, cancel = context.WithTimeout(ctx, flags.TailMax)
 								defer cancel()
 
-								timer := time.NewTimer(m.flags.TailInterval)
+								timer := time.NewTimer(flags.TailInterval)
 								timer.Stop()
 
 								for {
 									args.Flags.From = ts
-									args.BoolQuery = QueryElasticsearchGenerateBoolQuery(m.flags, false)
+									args.BoolQuery = QueryElasticsearchGenerateBoolQuery(&flags, false)
 
-									timer.Reset(m.flags.TailInterval)
+									timer.Reset(flags.TailInterval)
 									select {
 										case <- timer.C:
 										case <- ctx.Done():
@@ -143,18 +248,18 @@ func (m *QueryElasticsearch) Init(in, out chan *Message, global *GlobalFlags) (e
 									}
 								}
 							}
-						}(m, outc, wg, ctx)
-						out <- &Message{
-							Type: MessageTypeTerminate,
-						}
-						break LOOP
-					}
+						}()
 
+						if ! global.MultiStreams {
+							wg.Wait()
+							out <- &Message{Type: MessageTypeTerminate,}
+							break LOOP
+						}
+					}
 			}
 		}
 
 		wg.Wait()
-		cancel()
 		// Last message will signal the closing of the channel
 		<- in
 		close(out)
@@ -167,6 +272,11 @@ type QueryElasticsearch struct {
 	fs *pflag.FlagSet
 	client *elastic.Client
 	flags *QueryElasticsearchFlags
+	indexTmpl *template.Template
+	fromTmpl *template.Template
+	toTmpl *template.Template
+	aggregationTmpl *template.Template
+	timestampFieldTmpl *template.Template
 }
 
 type QueryElasticsearchFlags struct {
@@ -206,7 +316,7 @@ func QueryElasticsearchGenerateBoolQuery(flags *QueryElasticsearchFlags, gte boo
 		return elastic.NewBoolQuery().Must(qs, rq)
 }
 
-func QueryElasticsearchDo(args *QueryElasticsearchFuncArgs, outc MessageChannel, ctx context.Context) (ts string, err error) {
+func QueryElasticsearchDo(args *QueryElasticsearchFuncArgs, outc chan []byte, ctx context.Context) (ts string, err error) {
 	if args.Flags.Aggregation == "" {
 		ts, err = QueryElasticsearchDoSearch(args, outc, ctx)
 		if err != nil {
@@ -250,7 +360,7 @@ func QueryElasticsearchParseTimestamp(field string, hits []*elastic.SearchHit, a
 	return ""
 }
 
-func QueryElasticsearchDoSearch(args *QueryElasticsearchFuncArgs, outc MessageChannel, ctx context.Context) (ts string, err error) {
+func QueryElasticsearchDoSearch(args *QueryElasticsearchFuncArgs, outc chan []byte, ctx context.Context) (ts string, err error) {
 	ts = args.Flags.From
 
 	scroll := args.Client.Scroll(args.Flags.Index).
@@ -386,7 +496,7 @@ func (a QueryElasticsearchStringAggregation) Source() (v interface{}, err error)
 
 	return v, err
 }
-func QueryElasticsearchDoAggregation(args *QueryElasticsearchFuncArgs, outc MessageChannel, ctx context.Context) (ts string, err error) {
+func QueryElasticsearchDoAggregation(args *QueryElasticsearchFuncArgs, outc chan []byte, ctx context.Context) (ts string, err error) {
 	aggregation := &QueryElasticsearchStringAggregation{
 		body: args.Flags.Aggregation,
 	}

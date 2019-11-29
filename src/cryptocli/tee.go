@@ -24,7 +24,7 @@ func (m *Tee) Init(in, out chan *Message, global *GlobalFlags) (err error) {
 		return errors.Wrapf(err, "Flag %q must be specified in tee module", "pipe")
 	}
 
-	teeIn, teeOut, _, err := InitPipeline(m.pipe, &GlobalFlags{})
+	teeIn, teeOut, _, err := InitPipeline(m.pipe, global)
 	if err != nil {
 		return errors.Wrap(err, "Error creating pipeline in tee module")
 	}
@@ -32,26 +32,42 @@ func (m *Tee) Init(in, out chan *Message, global *GlobalFlags) (err error) {
 	go func(in, out chan *Message) {
 		wg := &sync.WaitGroup{}
 
+		wg.Add(1)
+
+		go func() {
+			defer wg.Done()
+			syn := &sync.WaitGroup{}
+
+			LOOP: for {
+				select {
+					case message, opened := <- teeIn:
+						if ! opened {
+							break LOOP
+						}
+
+						switch message.Type {
+							case MessageTypeTerminate:
+								syn.Wait()
+								teeOut <- message
+								break LOOP
+							case MessageTypeChannel:
+								cb, ok := message.Interface.(MessageChannelFunc)
+								if ok {
+									syn.Add(1)
+									go func() {
+										defer syn.Done()
+
+										_, inc := cb()
+										DrainChannel(inc, nil)
+									}()
+								}
+						}
+				}
+			}
+		}()
+
 		LOOP: for {
 			select {
-				case message, opened := <- teeIn:
-					if ! opened {
-						break LOOP
-					}
-
-					switch message.Type {
-						case MessageTypeTerminate:
-							wg.Wait()
-							teeOut <- message
-							break LOOP
-						case MessageTypeChannel:
-							inc, ok := message.Interface.(MessageChannel)
-							if ok {
-								wg.Add(1)
-								go DrainChannel(inc, wg)
-							}
-
-					}
 				case message, opened := <- in:
 					if ! opened {
 						break LOOP
@@ -64,34 +80,45 @@ func (m *Tee) Init(in, out chan *Message, global *GlobalFlags) (err error) {
 							out <- message
 							break LOOP
 						case MessageTypeChannel:
-							inc, ok := message.Interface.(MessageChannel)
+							cb, ok := message.Interface.(MessageChannelFunc)
 							if ok {
-								outc := make(MessageChannel)
-								teeOutc := make(MessageChannel)
+								mc := NewMessageChannel()
+								teemc := NewMessageChannel()
 
 								out <- &Message{
 									Type: MessageTypeChannel,
-									Interface: outc,
+									Interface: mc.Callback,
 								}
 								teeOut <- &Message{
 									Type: MessageTypeChannel,
-									Interface: teeOutc,
+									Interface: teemc.Callback,
 								}
 								wg.Add(1)
 
 								go func () {
+									mc.Start(nil)
+									teemc.Start(nil)
+									_, inc := cb()
+
 									for payload := range inc {
 										buff := make([]byte, len(payload))
 										copy(buff, payload)
 
-										teeOutc <- buff
-										outc <- payload
+										teemc.Channel <- buff
+										mc.Channel <- payload
 									}
 
-									close(teeOutc)
-									close(outc)
+									close(teemc.Channel)
+									close(mc.Channel)
 									wg.Done()
 								}()
+							}
+
+							if ! global.MultiStreams {
+								wg.Wait()
+								out <- &Message{Type: MessageTypeTerminate,}
+								teeOut <- &Message{Type: MessageTypeTerminate,}
+								break LOOP
 							}
 					}
 			}

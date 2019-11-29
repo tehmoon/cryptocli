@@ -8,6 +8,8 @@ import (
 	"github.com/spf13/pflag"
 	"sync"
 	"log"
+	"text/template"
+	"bytes"
 )
 
 func init() {
@@ -19,6 +21,7 @@ type TCP struct {
 	servername string
 	insecure bool
 	readTimeout time.Duration
+	tplAddr *template.Template
 }
 
 func (m *TCP) SetFlagSet(fs *pflag.FlagSet, args []string) {
@@ -28,47 +31,53 @@ func (m *TCP) SetFlagSet(fs *pflag.FlagSet, args []string) {
 	fs.DurationVar(&m.readTimeout, "read-timeout", 3 * time.Second, "Read timeout for the tcp connection")
 }
 
-func (m *TCP) Init(in, out chan *Message, global *GlobalFlags) (error) {
+func (m *TCP) Init(in, out chan *Message, global *GlobalFlags) (err error) {
 	if m.readTimeout <= 0 {
 		return errors.Errorf("Flag %q has to be greater that 0", "--read-timeout")
+	}
+
+	m.tplAddr, err = template.New("root").Parse(m.addr)
+	if err != nil {
+		return errors.Wrap(err, "Error parsing template for \"--addr\" flag")
 	}
 
 	go func(in, out chan *Message) {
 		wg := &sync.WaitGroup{}
 
 		init := false
-		outc := make(MessageChannel)
+		mc := NewMessageChannel()
 
 		out <- &Message{
 			Type: MessageTypeChannel,
-			Interface: outc,
+			Interface: mc.Callback,
 		}
 
 		LOOP: for message := range in {
 			switch message.Type {
 				case MessageTypeTerminate:
 					if ! init {
-						close(outc)
+						close(mc.Channel)
 					}
+
 					wg.Wait()
 					out <- message
 					break LOOP
 				case MessageTypeChannel:
-					inc, ok := message.Interface.(MessageChannel)
+					cb, ok := message.Interface.(MessageChannelFunc)
 					if ok {
 						if ! init {
 							init = true
 						} else {
-							outc = make(MessageChannel)
+							mc = NewMessageChannel()
 
 							out <- &Message{
 								Type: MessageTypeChannel,
-								Interface: outc,
+								Interface: mc.Callback,
 							}
 						}
 
 						wg.Add(1)
-						go tcpStartHandler(m, inc, outc, wg)
+						go tcpStartHandler(m, cb, mc, wg)
 
 						if ! global.MultiStreams {
 							wg.Wait()
@@ -89,10 +98,26 @@ func (m *TCP) Init(in, out chan *Message, global *GlobalFlags) (error) {
 	return nil
 }
 
-func tcpStartHandler(m *TCP, inc, outc MessageChannel, wg *sync.WaitGroup) {
+func tcpStartHandler(m *TCP, cb MessageChannelFunc, mc *MessageChannel, wg *sync.WaitGroup) {
 	defer wg.Done()
 
-	addr, err := net.ResolveTCPAddr("tcp", m.addr)
+	mc.Start(nil)
+	metadata, inc := cb()
+
+	buff := bytes.NewBuffer(make([]byte, 0))
+	err := m.tplAddr.Execute(buff, metadata)
+	if err != nil {
+		err = errors.Wrap(err, "Error executing template addr")
+		log.Println(err.Error())
+		close(mc.Channel)
+		DrainChannel(inc, nil)
+		return
+	}
+	defer buff.Reset()
+
+	outc := mc.Channel
+
+	addr, err := net.ResolveTCPAddr("tcp", string(buff.Bytes()[:]))
 	if err != nil {
 		err = errors.Wrap(err, "Unable to resolve tcp address")
 		log.Println(err.Error())
@@ -130,7 +155,7 @@ func tcpStartHandler(m *TCP, inc, outc MessageChannel, wg *sync.WaitGroup) {
 	conn.Close()
 }
 
-func tcpStartIn(conn net.Conn, inc MessageChannel, wg *sync.WaitGroup) {
+func tcpStartIn(conn net.Conn, inc chan []byte, wg *sync.WaitGroup) {
 	defer wg.Done()
 	defer conn.Close()
 
@@ -146,7 +171,7 @@ func tcpStartIn(conn net.Conn, inc MessageChannel, wg *sync.WaitGroup) {
 	DrainChannel(inc, nil)
 }
 
-func tcpStartOut(conn net.Conn, outc MessageChannel, timeout time.Duration, wg *sync.WaitGroup) {
+func tcpStartOut(conn net.Conn, outc chan []byte, timeout time.Duration, wg *sync.WaitGroup) {
 	defer wg.Done()
 	defer close(outc)
 	defer conn.Close()

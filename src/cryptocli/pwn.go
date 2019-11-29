@@ -8,6 +8,7 @@ import (
 	"log"
 	"github.com/tehmoon/errors"
 	"github.com/robertkrimen/otto"
+	"github.com/robertkrimen/otto/ast"
 	"io"
 	"regexp"
 	jsParser "github.com/robertkrimen/otto/parser"
@@ -33,53 +34,43 @@ func (m *Pwn) Init(in, out chan *Message, global *GlobalFlags) (error) {
 	}
 
 
-	init := false
-	outc := make(MessageChannel)
-
-	out <- &Message{
-		Type: MessageTypeChannel,
-		Interface: outc,
-	}
-
 	go func(in, out chan *Message) {
 		wg := &sync.WaitGroup{}
+
+		init := false
+		mc := NewMessageChannel()
+
+		out <- &Message{
+			Type: MessageTypeChannel,
+			Interface: mc.Callback,
+		}
 
 		LOOP: for message := range in {
 			switch message.Type {
 				case MessageTypeTerminate:
 					if ! init {
-						close(outc)
+						close(mc.Channel)
 					}
+
 					wg.Wait()
 					out <- message
 					break LOOP
 				case MessageTypeChannel:
-					inc, ok := message.Interface.(MessageChannel)
+					cb, ok := message.Interface.(MessageChannelFunc)
 					if ok {
 						if ! init {
 							init = true
 						} else {
-							outc = make(MessageChannel)
+							mc = NewMessageChannel()
 
 							out <- &Message{
 								Type: MessageTypeChannel,
-								Interface: outc,
-							}
-						}
-
-						vm := otto.New()
-						_, err = vm.Run(js)
-						if err != nil {
-							err = errors.Wrap(err, "Unexpected error running file-pipe javascript")
-							log.Println(err.Error())
-							if ! global.MultiStreams {
-								out <- &Message{Type: MessageTypeTerminate,}
-								break LOOP
+								Interface: mc.Callback,
 							}
 						}
 
 						wg.Add(1)
-						go PwnHandler(m, inc, outc, vm, wg)
+						go PwnHandler(m, cb, mc, js, wg)
 
 						if ! global.MultiStreams {
 							wg.Wait()
@@ -99,8 +90,27 @@ func (m *Pwn) Init(in, out chan *Message, global *GlobalFlags) (error) {
 	return nil
 }
 
-func PwnHandler(m *Pwn, inc, outc MessageChannel, vm *otto.Otto, wg *sync.WaitGroup) {
+type PwnPipeFlags struct {
+	MaxConcurrentStreams int
+	MultiStreams bool
+}
+
+func PwnHandler(m *Pwn, cb MessageChannelFunc, mc *MessageChannel, js *ast.Program, wg *sync.WaitGroup) {
 	defer wg.Done()
+
+	mc.Start(nil)
+	metadata, inc := cb()
+	outc := mc.Channel
+
+	vm := otto.New()
+	_, err := vm.Run(js)
+	if err != nil {
+		err = errors.Wrap(err, "Unexpected error running file-pipe javascript")
+		log.Println(err.Error())
+		close(outc)
+		DrainChannel(inc, nil)
+		return
+	}
 
 	cancel := make(chan struct{})
 	reader := NewChannelReader(inc)
@@ -205,8 +215,50 @@ func PwnHandler(m *Pwn, inc, outc MessageChannel, vm *otto.Otto, wg *sync.WaitGr
 
 		callback, _ := call.Argument(1).ToString()
 
-		pin, pout, _, err := InitPipeline(pipe, &GlobalFlags{
+		flags := &PwnPipeFlags{
 			MaxConcurrentStreams: 1,
+			MultiStreams: false,
+		}
+
+		third, _ := call.Argument(2).Export()
+		if third != nil {
+			v, ok := third.(map[string]interface{})
+			if ! ok {
+				err = errors.Wrapf(err, "error casting argument to oject in %s\n", call.CallerLocation())
+				log.Println(err.Error())
+				return otto.UndefinedValue()
+			}
+
+			if arg, ok := v["max-concurrent-streams"]; ok {
+				maxConcurrentStreams, ok := arg.(int64)
+				if ! ok {
+					err = errors.Wrapf(err, "error casting max-concurrent-streams to int in %s\n", call.CallerLocation())
+					log.Println(err.Error())
+					return otto.UndefinedValue()
+				}
+
+				flags.MaxConcurrentStreams = int(maxConcurrentStreams)
+
+				if flags.MaxConcurrentStreams < 1 {
+					err = errors.Errorf("Flag %q cannot be less than 1\n", "max-concurrent-streams", call.CallerLocation())
+					log.Println(err.Error())
+					return otto.UndefinedValue()
+				}
+			}
+
+			if arg, ok := v["multi-streams"]; ok {
+				flags.MultiStreams, ok = arg.(bool)
+				if ! ok {
+					err = errors.Wrapf(err, "error casting multi-streams to bool in %s\n", call.CallerLocation())
+					log.Println(err.Error())
+					return otto.UndefinedValue()
+				}
+			}
+		}
+
+		pin, pout, _, err := InitPipeline(pipe, &GlobalFlags{
+			MaxConcurrentStreams: flags.MaxConcurrentStreams,
+			MultiStreams: flags.MultiStreams,
 		})
 		if err != nil {
 			err = errors.Wrapf(err, "Error init pipeline in %s\n", call.CallerLocation())
@@ -215,28 +267,49 @@ func PwnHandler(m *Pwn, inc, outc MessageChannel, vm *otto.Otto, wg *sync.WaitGr
 		}
 
 		wg := &sync.WaitGroup{}
+		init := false
 
-		poutc := make(MessageChannel)
+		pmc := NewMessageChannel()
 		pout <- &Message{
 			Type: MessageTypeChannel,
-			Interface: poutc,
+			Interface: pmc.Callback,
 		}
 
 		LOOP: for {
 			select {
 				case message, opened := <- pin:
 					if ! opened {
+						if ! init {
+							close(pmc.Channel)
+						}
 						break LOOP
 					}
 
 					switch message.Type {
 						case MessageTypeTerminate:
+							if ! init {
+								close(pmc.Channel)
+							}
 							wg.Wait()
 							pout <- message
 							break LOOP
 						case MessageTypeChannel:
-							pinc, ok := message.Interface.(MessageChannel)
+							pcb, ok := message.Interface.(MessageChannelFunc)
 							if ok {
+								if ! init {
+									init = true
+								} else {
+									pmc = NewMessageChannel()
+									pout <- &Message{
+										Type: MessageTypeChannel,
+										Interface: pmc.Callback,
+									}
+								}
+
+								pmc.Start(nil)
+								pmeta, pinc := pcb()
+								poutc := pmc.Channel
+
 								if callback != "undefined" {
 									oldReader := reader
 									reader = NewChannelReader(pinc)
@@ -244,7 +317,7 @@ func PwnHandler(m *Pwn, inc, outc MessageChannel, vm *otto.Otto, wg *sync.WaitGr
 									oldOutc := outc
 									outc = poutc
 
-									_, err := vm.Call(callback, nil)
+									_, err := vm.Call(callback, nil, pmeta)
 									if err != nil {
 										err = errors.Wrap(err, "Error calling callback function")
 										log.Println(err.Error())
@@ -253,19 +326,23 @@ func PwnHandler(m *Pwn, inc, outc MessageChannel, vm *otto.Otto, wg *sync.WaitGr
 									close(outc)
 									reader.Close()
 									wg.Wait()
-									pout <- &Message{Type: MessageTypeTerminate,}
 									outc = oldOutc
 									reader = oldReader
-									break LOOP
+									if ! flags.MultiStreams {
+										pout <- &Message{Type: MessageTypeTerminate,}
+										break LOOP
+									}
+
+									continue LOOP
 								}
 								wg.Add(2)
-								go func(pinc, outc MessageChannel, wg *sync.WaitGroup) {
+								go func(pinc, outc chan []byte, wg *sync.WaitGroup) {
 									for payload := range pinc {
 										outc <- payload
 									}
 									wg.Done()
 								}(pinc, outc, wg)
-								go func(reader *ChannelReader, poutc MessageChannel, wg *sync.WaitGroup) {
+								go func(reader *ChannelReader, poutc chan []byte, wg *sync.WaitGroup) {
 									defer wg.Done()
 									defer close(poutc)
 									for {
@@ -280,10 +357,12 @@ func PwnHandler(m *Pwn, inc, outc MessageChannel, vm *otto.Otto, wg *sync.WaitGr
 										}
 										poutc <- message
 									}
-								}(reader, poutc, wg)
-								wg.Wait()
-								pout <- &Message{Type: MessageTypeTerminate,}
-								break LOOP
+								}(reader, pmc.Channel, wg)
+								if ! flags.MultiStreams {
+									wg.Wait()
+									pout <- &Message{Type: MessageTypeTerminate,}
+									break LOOP
+								}
 							}
 					}
 			}
@@ -331,7 +410,7 @@ func PwnHandler(m *Pwn, inc, outc MessageChannel, vm *otto.Otto, wg *sync.WaitGr
 
 		object, ok := first.(map[string]interface{})
 		if ! ok {
-			err = errors.Wrapf(err, "Error casting argument to oject in %s\n", call.CallerLocation())
+			err = errors.Wrapf(err, "Error casting argument %T to oject in %s\n", first, call.CallerLocation())
 			log.Println(err.Error())
 			return otto.UndefinedValue()
 		}
@@ -428,18 +507,18 @@ func PwnHandler(m *Pwn, inc, outc MessageChannel, vm *otto.Otto, wg *sync.WaitGr
 	})
 
 	wg.Add(1)
-	go func(outc MessageChannel, vm *otto.Otto, wg *sync.WaitGroup, cancel chan struct{}) {
+	go func(outc chan []byte, metadata map[string]interface{}, vm *otto.Otto, wg *sync.WaitGroup, cancel chan struct{}) {
 		defer wg.Done()
 		defer close(outc)
 		defer close(cancel)
 
-		_, err := vm.Call("start", nil)
+		_, err := vm.Call("start", nil, metadata)
 		if err != nil {
 			err = errors.Wrap(err, "Error calling start function")
 			log.Println(err.Error())
 			return
 		}
-	}(outc, vm, wg, cancel)
+	}(outc, metadata, vm, wg, cancel)
 }
 
 func NewPwn() (Module) {

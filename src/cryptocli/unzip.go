@@ -38,25 +38,47 @@ func (m *Unzip) Init(in, out chan *Message, global *GlobalFlags) (error) {
 	go func(in, out chan *Message) {
 		wg := &sync.WaitGroup{}
 
+		init := false
+		mc := NewMessageChannel()
+
+		out <- &Message{
+			Type: MessageTypeChannel,
+			Interface: mc.Callback,
+		}
+
 		LOOP: for message := range in {
 			switch message.Type {
 				case MessageTypeTerminate:
+					if ! init {
+						close(mc.Channel)
+					}
+
 					wg.Wait()
 					out <- message
 					break LOOP
 				case MessageTypeChannel:
-					inc, ok := message.Interface.(MessageChannel)
+					cb, ok := message.Interface.(MessageChannelFunc)
 					if ok {
-						outc := make(MessageChannel)
+						if ! init {
+							init = true
+						} else {
+							mc = NewMessageChannel()
 
-						out <- &Message{
-							Type: MessageTypeChannel,
-							Interface: outc,
+							out <- &Message{
+								Type: MessageTypeChannel,
+								Interface: mc.Callback,
+							}
 						}
+
 						wg.Add(1)
 
-						go func(inc, outc MessageChannel, patterns []*regexp.Regexp, wg *sync.WaitGroup) {
+						go func(cb MessageChannelFunc, mc *MessageChannel, patterns []*regexp.Regexp, wg *sync.WaitGroup) {
 							defer wg.Done()
+
+							mc.Start(nil)
+							_, inc := cb()
+
+							outc := mc.Channel
 							defer close(outc)
 
 							tempfile, err := ioutil.TempFile("", "cryptocli-zip")
@@ -94,7 +116,16 @@ func (m *Unzip) Init(in, out chan *Message, global *GlobalFlags) (error) {
 								log.Println(err.Error())
 								return
 							}
-						}(inc, outc, rePatterns, wg)
+						}(cb, mc, rePatterns, wg)
+
+						if ! global.MultiStreams {
+							if ! init {
+								close(mc.Channel)
+							}
+							wg.Wait()
+							out <- &Message{Type: MessageTypeTerminate,}
+							break LOOP
+						}
 					}
 			}
 		}
@@ -108,7 +139,7 @@ func (m *Unzip) Init(in, out chan *Message, global *GlobalFlags) (error) {
 	return nil
 }
 
-func UnzipReadZippedFile(zfile *zip.File, outc MessageChannel) (error) {
+func UnzipReadZippedFile(zfile *zip.File, outc chan []byte) (error) {
 	file, err := zfile.Open()
 	if err != nil {
 		return errors.Wrapf(err, "Err opening zipped file %q", zfile.Name)
@@ -126,7 +157,7 @@ func UnzipReadZippedFile(zfile *zip.File, outc MessageChannel) (error) {
 	return nil
 }
 
-func UnzipReadZip(reader *zip.ReadCloser, patterns []*regexp.Regexp, outc MessageChannel) (error) {
+func UnzipReadZip(reader *zip.ReadCloser, patterns []*regexp.Regexp, outc chan []byte) (error) {
 	for _, zfile := range reader.File {
 		for _, pattern := range patterns {
 			ok := pattern.MatchString(zfile.Name)

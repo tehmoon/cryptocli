@@ -46,23 +46,49 @@ func (m *Byte) Init(in, out chan *Message, global *GlobalFlags) (err error) {
 	go func(in, out chan *Message) {
 		wg := &sync.WaitGroup{}
 
+		init := false
+		mc := NewMessageChannel()
+
+		out <- &Message{
+			Type: MessageTypeChannel,
+			Interface: mc.Callback,
+		}
+
 		LOOP: for message := range in {
 			switch message.Type {
 				case MessageTypeTerminate:
+					if ! init {
+						close(mc.Channel)
+					}
+
 					wg.Wait()
 					out <- message
 					break LOOP
 				case MessageTypeChannel:
-					inc, ok := message.Interface.(MessageChannel)
+					cb, ok := message.Interface.(MessageChannelFunc)
 					if ok {
-						outc := make(MessageChannel)
+						if ! init {
+							init = true
+						} else {
+							mc = NewMessageChannel()
 
-						out <- &Message{
-							Type: MessageTypeChannel,
-							Interface: outc,
+							out <- &Message{
+								Type: MessageTypeChannel,
+								Interface: mc.Callback,
+							}
 						}
+
 						wg.Add(1)
-						go startByteHandler(m, inc, outc, wg)
+						go startByteHandler(m, cb, mc, wg)
+
+						if ! global.MultiStreams {
+							if ! init {
+								close(mc.Channel)
+							}
+							wg.Wait()
+							out <- &Message{Type: MessageTypeTerminate,}
+							break LOOP
+						}
 					}
 			}
 		}
@@ -147,21 +173,27 @@ var ByteReaderCallbackDelim = func(reader io.Reader, delim *regexp.Regexp) (Byte
 	}
 }
 
-func startByteHandler(m *Byte, inc, outc MessageChannel, wg *sync.WaitGroup) {
+func startByteHandler(m *Byte, cb MessageChannelFunc, mc *MessageChannel, wg *sync.WaitGroup) {
 	defer wg.Done()
+
+	mc.Start(nil)
+
+	_, inc := cb()
 	defer DrainChannel(inc, nil)
+
+	outc := mc.Channel
 	defer close(outc)
 
 	reader := NewChannelReader(inc)
 
-	var cb ByteReaderCallback
+	var brcb ByteReaderCallback
 
 	if m.delimFlag != "" {
-		cb = ByteReaderCallbackDelim(reader, m.delimiter)
+		brcb = ByteReaderCallbackDelim(reader, m.delimiter)
 	} else if m.messageSize > 0 {
-		cb = ByteReaderCallbackFull(reader, m.messageSize)
+		brcb = ByteReaderCallbackFull(reader, m.messageSize)
 	} else {
-		cb = ByteReaderCallbackMessage(reader)
+		brcb = ByteReaderCallbackMessage(reader)
 	}
 
 	skipped := 0
@@ -172,7 +204,7 @@ func startByteHandler(m *Byte, inc, outc MessageChannel, wg *sync.WaitGroup) {
 	}
 
 	for {
-		payload, err := cb()
+		payload, err := brcb()
 		if err != nil {
 			err = errors.Wrapf(err, "Err reading from byte reader")
 			log.Println(err.Error())
