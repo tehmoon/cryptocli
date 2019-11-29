@@ -4,7 +4,6 @@ import (
 	"sync"
 	"time"
 	"log"
-	"crypto/tls"
 	"net"
 	"github.com/tehmoon/errors"
 	"github.com/spf13/pflag"
@@ -16,8 +15,6 @@ func init() {
 
 type TCPServer struct {
 	addr string
-	cert string
-	key string
 	connectTimeout time.Duration
 	readTimeout time.Duration
 }
@@ -31,6 +28,7 @@ type TCPServerRelayer struct {
 func tcpServerHandler(conn net.Conn, m *TCPServer, relay *TCPServerRelayer) {
 	mc, cb, wg := relay.MessageChannel, relay.Callback, relay.Wg
 	defer wg.Done()
+	defer conn.Close()
 
 	mc.Start(map[string]interface{}{
 		"local-addr": conn.RemoteAddr().String(),
@@ -40,13 +38,10 @@ func tcpServerHandler(conn net.Conn, m *TCPServer, relay *TCPServerRelayer) {
 
 	_, inc := cb()
 	outc := mc.Channel
+	defer close(outc)
 
 	log.Printf("Client %q is connected\n", conn.LocalAddr().String())
-
-	syn := &sync.WaitGroup{}
-	syn.Add(1)
-
-	go func(conn net.Conn, inc chan []byte, wg *sync.WaitGroup) {
+	go func(conn net.Conn, inc chan []byte) {
 		defer conn.Close()
 
 		for payload := range inc {
@@ -59,29 +54,22 @@ func tcpServerHandler(conn net.Conn, m *TCPServer, relay *TCPServerRelayer) {
 		}
 
 		DrainChannel(inc, nil)
-	}(conn, inc, syn)
+	}(conn, inc)
 
-	go func(conn net.Conn, outc chan []byte, timeout time.Duration, wg *sync.WaitGroup) {
-		defer wg.Done()
-		defer close(outc)
-		defer conn.Close()
+	defer conn.Close()
+	conn.SetReadDeadline(time.Now().Add(m.readTimeout))
 
-		conn.SetReadDeadline(time.Now().Add(timeout))
+	err := ReadBytesStep(conn, func(payload []byte) bool {
+		outc <- payload
+		conn.SetReadDeadline(time.Now().Add(m.readTimeout))
 
-		err := ReadBytesStep(conn, func(payload []byte) bool {
-			outc <- payload
-			conn.SetReadDeadline(time.Now().Add(timeout))
-
-			return true
-		})
-		if err != nil {
-			err = errors.Wrap(err, "Error reading from tcp socket")
-			log.Println(err.Error())
-			return
-		}
-	}(conn, outc, m.readTimeout, syn)
-
-	syn.Wait()
+		return true
+	})
+	if err != nil {
+		err = errors.Wrap(err, "Error reading from tcp socket")
+		log.Println(err.Error())
+		return
+	}
 }
 
 func tcpServerServe(conn net.Conn, m *TCPServer, relayer chan *TCPServerRelayer, connc, donec, cancel chan struct{}) {
@@ -124,8 +112,6 @@ func tcpServerServe(conn net.Conn, m *TCPServer, relayer chan *TCPServerRelayer,
 
 func (m *TCPServer) SetFlagSet(fs *pflag.FlagSet, args []string) {
 	fs.StringVar(&m.addr, "listen", "", "Listen on addr:port. If port is 0, random port will be assigned")
-	fs.StringVar(&m.cert, "certificate", "", "Path to certificate in PEM format")
-	fs.StringVar(&m.key, "key", "", "Path to private key in PEM format")
 	fs.DurationVar(&m.connectTimeout, "connect-timeout", 30 * time.Second, "Max amount of time to wait for a potential connection when pipeline is closing")
 	fs.DurationVar(&m.readTimeout, "read-timeout", 15 * time.Second, "Amout of time to wait reading from the connection")
 }
@@ -143,14 +129,6 @@ func (m *TCPServer) Init(in, out chan *Message, global *GlobalFlags) (error) {
 		return errors.Errorf("Flag %q cannot be negative or zero", "--connect-timeout")
 	}
 
-	if m.cert != "" && m.key == "" {
-		return errors.Errorf("Flag %q is missing when flag %q is set", "--key", "--certiticate")
-	}
-
-	if m.key != "" && m.cert == "" {
-		return errors.Errorf("Flag %q is missing when flag %q is set", "--certificate", "--key")
-	}
-
 	addr, err := net.ResolveTCPAddr("tcp", m.addr)
 	if err != nil {
 		return errors.Wrap(err, "Unable to resolve tcp address")
@@ -162,20 +140,7 @@ func (m *TCPServer) Init(in, out chan *Message, global *GlobalFlags) (error) {
 		return errors.Wrap(err, "Unable to listen on tcp address")
 	}
 
-	if m.cert != "" && m.key != "" {
-		pem, err := tls.LoadX509KeyPair(m.cert, m.key)
-		if err != nil {
-			return errors.Wrap(err, "Error loading x509 key pair from files")
-		}
-
-		config := &tls.Config{
-			Certificates: []tls.Certificate{pem,},
-		}
-
-		listener = tls.NewListener(listener, config)
-	}
-
-	log.Printf("Tcp-server listening on %s with TLS enabled: %t\n", listener.Addr().String(), m.key != "" && m.cert != "")
+	log.Printf("Tcp-server listening on %s\n", listener.Addr().String())
 
 	go func() {
 		wg := &sync.WaitGroup{}
