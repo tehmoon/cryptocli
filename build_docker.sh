@@ -13,6 +13,8 @@ usage() {
 	exit 2
 }
 
+echo ${username}
+
 [ "x${TAG}" = "x" ] && usage
 
 exec 6>&1
