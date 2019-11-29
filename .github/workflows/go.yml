@@ -1,7 +1,12 @@
 name: Go
 on:
     pull_request:
-            types: [synchronize, review_requested, edited, opened]    
+      paths:
+        - "src/cryptocli/**"
+      types: [synchronize, review_requested, edited, opened]    
+    push:
+      branches:
+        - "master"
 jobs:
   build:
     name: Build
