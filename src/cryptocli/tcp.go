@@ -22,6 +22,7 @@ type TCP struct {
 	insecure bool
 	readTimeout time.Duration
 	tplAddr *template.Template
+	tplTLS *template.Template
 }
 
 func (m *TCP) SetFlagSet(fs *pflag.FlagSet, args []string) {
@@ -39,6 +40,11 @@ func (m *TCP) Init(in, out chan *Message, global *GlobalFlags) (err error) {
 	m.tplAddr, err = template.New("root").Parse(m.addr)
 	if err != nil {
 		return errors.Wrap(err, "Error parsing template for \"--addr\" flag")
+	}
+
+	m.tplTLS, err = template.New("root").Parse(m.servername)
+	if err != nil {
+		return errors.Wrap(err, "Error parsing tepmlate for \"--tls\" flag")
 	}
 
 	go func(in, out chan *Message) {
@@ -113,11 +119,23 @@ func tcpStartHandler(m *TCP, cb MessageChannelFunc, mc *MessageChannel, wg *sync
 		DrainChannel(inc, nil)
 		return
 	}
-	defer buff.Reset()
+	addr := string(buff.Bytes()[:])
+	buff.Reset()
+
+	err = m.tplTLS.Execute(buff, metadata)
+	if err != nil {
+		err = errors.Wrap(err, "Error executing template tls")
+		log.Println(err.Error())
+		close(mc.Channel)
+		DrainChannel(inc, nil)
+		return
+	}
+	servername := string(buff.Bytes()[:])
+	buff.Reset()
 
 	outc := mc.Channel
 
-	addr, err := net.ResolveTCPAddr("tcp", string(buff.Bytes()[:]))
+	a, err := net.ResolveTCPAddr("tcp", addr)
 	if err != nil {
 		err = errors.Wrap(err, "Unable to resolve tcp address")
 		log.Println(err.Error())
@@ -127,7 +145,7 @@ func tcpStartHandler(m *TCP, cb MessageChannelFunc, mc *MessageChannel, wg *sync
 	}
 
 	var conn net.Conn
-	conn, err = net.DialTCP("tcp", nil, addr)
+	conn, err = net.DialTCP("tcp", nil, a)
 	if err != nil {
 		err = errors.Wrap(err, "Fail to dial tcp")
 		log.Println(err.Error())
@@ -136,10 +154,10 @@ func tcpStartHandler(m *TCP, cb MessageChannelFunc, mc *MessageChannel, wg *sync
 		return
 	}
 
-	if m.servername != "" || m.insecure {
+	if servername != "" || m.insecure {
 		config := &tls.Config{
 			InsecureSkipVerify: m.insecure,
-			ServerName: m.servername,
+			ServerName: servername,
 		}
 
 		conn = tls.Client(conn, config)
