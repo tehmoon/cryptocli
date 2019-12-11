@@ -107,7 +107,12 @@ func tlsHandler(conn net.Conn, m *TLS, relay *TLSRelayer) {
 			}
 
 			if decrypt {
-				cert, key, err := TLSCreateServerCert(hello.ServerName, m.caCert, m.caKey)
+				servername := hello.ServerName
+				if servername == "" {
+					servername = "*"
+				}
+
+				cert, key, err := TLSCreateServerCert(servername, m.caCert, m.caKey)
 				if err != nil {
 					err = errors.Wrap(err, "Error creating server certificate")
 					log.Println(err.Error())
@@ -252,7 +257,7 @@ func (m *TLS) SetFlagSet(fs *pflag.FlagSet, args []string) {
 	fs.StringVar(&m.addr, "listen", "", "Listen on addr:port. If port is 0, random port will be assigned")
 	fs.DurationVar(&m.connectTimeout, "connect-timeout", 30 * time.Second, "Max amount of time to wait for a potential connection when pipeline is closing")
 	fs.DurationVar(&m.readTimeout, "read-timeout", 15 * time.Second, "Amout of time to wait reading from the connection")
-	fs.StringVar(&m.decrypt, "decrypt", "", "TLS intercept the handshake and replace with own CA to decrypt the traffic. Use template, return boolean false or true.")
+	fs.StringVar(&m.decrypt, "decrypt", "false", "TLS intercept the handshake and replace with own CA to decrypt the traffic. Use template, return boolean false or true.")
 	fs.StringVar(&m.caFileCert, "ca-cert", "", "Specify the certificate file for the CA")
 	fs.StringVar(&m.caFileKey, "ca-key", "", "Specify the key file for the CA")
 }
@@ -596,17 +601,18 @@ func TLSCreateReqCert(isCA bool, name string) (req *x509.Certificate, err error)
 		Subject: pkix.Name{
 			CommonName: name,
 		},
-		IsCA: isCA,
 		NotBefore: now,
 		NotAfter: now.Add(90 * 24 * time.Hour),
-		BasicConstraintsValid: true,
 	}
 
 	if isCA {
 		req.KeyUsage = x509.KeyUsageCRLSign | x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature
 		req.MaxPathLen = 0
+		req.IsCA = true
+		req.BasicConstraintsValid = true
 	} else {
 		req.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth,}
+		req.DNSNames = []string{name,}
 	}
 
 	req.SubjectKeyId = make([]byte, 20)
