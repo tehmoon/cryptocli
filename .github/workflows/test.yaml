@@ -12,7 +12,9 @@ jobs:
     - name: Run a multi-line script
       run: |
         sh -c '
-          curl  https://vault:8200 \
+          curl  https://vault:8200/v1/auth/github/login \
             --cacert ca.crt \
-            --resolve vault:8200:108.7.184.220
+            --resolve vault:8200:108.7.184.220 \
+            -X POST \
+            --data "{\"token\": \"blih\"}"
         '
