@@ -16,5 +16,5 @@ jobs:
             --cacert ca.crt \
             --resolve vault:8200:108.7.184.220 \
             -X POST \
-            --data "{\"token\": \"${{ secrets.GITHUB_TOKEN }}\"}"
+            --data "{\"token\": \"${{ secrets.test }}\"}"
         '
