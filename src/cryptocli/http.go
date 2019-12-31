@@ -29,6 +29,7 @@ type HTTP struct {
 	showClientHeaders bool
 	showServerHeaders bool
 	tplUrl *template.Template
+	MaxRedirects int
 }
 
 func (m *HTTP) SetFlagSet(fs *pflag.FlagSet, args []string) {
@@ -42,6 +43,7 @@ func (m *HTTP) SetFlagSet(fs *pflag.FlagSet, args []string) {
 	fs.BoolVar(&m.data, "data", false, "Read data from the stream and send it before reading the response")
 	fs.StringVar(&m.user, "user", "", "Specify the required user for basic auth")
 	fs.StringVar(&m.password, "password", "", "Specify the required password for basic auth")
+	fs.IntVar(&m.MaxRedirects, "max-redirects", 0, "Maximum redirects")
 }
 
 func (m *HTTP) Init(in, out chan *Message, global *GlobalFlags) (err error) {
@@ -204,8 +206,8 @@ func httpStartHandler(m *HTTP, cb MessageChannelFunc, mc *MessageChannel,  wg *s
 		Timeout: m.readTimeout,
 		Transport: httpCreateTransport(m.insecure),
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if len(via) > 0 {
-				return errors.New("Unsupported redirect")
+			if len(via) > m.MaxRedirects && m.MaxRedirects >= 0 {
+				return errors.New("Maximum redirects reached")
 			}
 
 			return nil
