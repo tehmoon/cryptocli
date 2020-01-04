@@ -51,6 +51,7 @@ compile() {
 compile darwin amd64
 compile linux amd64
 compile linux 386
+compile linux arm64
 compile windows amd64
 compile windows 386
 compile openbsd amd64
