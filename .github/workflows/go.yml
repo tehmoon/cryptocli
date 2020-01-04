@@ -3,6 +3,7 @@ on:
     pull_request:
       paths:
         - "src/cryptocli/**"
+        - "build.sh"
       types: [synchronize, review_requested, edited, opened]    
     push:
       branches:
