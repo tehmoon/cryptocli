@@ -131,13 +131,13 @@ var ByteReaderCallbackDelim = func(reader io.Reader, delim *regexp.Regexp) (Byte
 	// If there is nothing to match, more data is asked.
 	// If there is a match, everything up to the match is returned.
 	scanner.Split(func(data []byte, atEOF bool) (advance int, token []byte, err error) {
-		if atEOF && len(data) > 0 {
-			return 0, data, bufio.ErrFinalToken
-		}
-
 		finds := delim.FindSubmatch(data)
 
 		if len(finds) < 2 {
+			if atEOF {
+				return 0, nil, bufio.ErrFinalToken
+			}
+
 			return 0, nil, nil
 		}
 

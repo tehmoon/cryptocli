@@ -153,9 +153,24 @@ func (cr *ChannelReader) Read(p []byte) (n int, err error) {
 	for {
 		payload, opened := <- cr.c
 		if ! opened {
-			copy(p, cr.crumb[:len(p)])
-			cr.crumb = cr.crumb[len(p):]
-			return len(p), io.EOF
+			// if there are more to copy but channel is closed
+			if len(cr.crumb) > len(p) {
+				// copy everything in the buffer
+				copy(p, cr.crumb)
+				// truncate the buffer
+				cr.crumb = cr.crumb[:len(p)]
+
+				// the rest will be picked up by the same path
+				return len(p), nil
+			}
+
+			// The buffer is now smaller than what needs to be copied
+			copy(p, cr.crumb)
+			// save the length of the buffer
+			bytesCopied := len(cr.crumb)
+			// delete the buffer
+			cr.crumb = nil
+			return bytesCopied, io.EOF
 		}
 
 		cr.crumb = append(cr.crumb, payload...)
