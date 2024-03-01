@@ -3,10 +3,16 @@ package main
 import (
 	"sync"
 	"time"
+	"crypto/ecdsa"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/rand"
+	"crypto/elliptic"
 	"log"
 	"net"
 	"github.com/tehmoon/errors"
 	"github.com/spf13/pflag"
+	"encoding/pem"
 )
 
 func init() {
@@ -17,6 +23,7 @@ type TCPServer struct {
 	addr string
 	connectTimeout time.Duration
 	readTimeout time.Duration
+	tls bool
 }
 
 type TCPServerRelayer struct {
@@ -112,6 +119,7 @@ func tcpServerServe(conn net.Conn, m *TCPServer, relayer chan *TCPServerRelayer,
 
 func (m *TCPServer) SetFlagSet(fs *pflag.FlagSet, args []string) {
 	fs.StringVar(&m.addr, "listen", "", "Listen on addr:port. If port is 0, random port will be assigned")
+	fs.BoolVar(&m.tls, "tls", false, "Create a random certificate and use it as a tls server")
 	fs.DurationVar(&m.connectTimeout, "connect-timeout", 30 * time.Second, "Max amount of time to wait for a potential connection when pipeline is closing")
 	fs.DurationVar(&m.readTimeout, "read-timeout", 15 * time.Second, "Amout of time to wait reading from the connection")
 }
@@ -138,6 +146,39 @@ func (m *TCPServer) Init(in, out chan *Message, global *GlobalFlags) (error) {
 	listener, err = net.ListenTCP("tcp", addr)
 	if err != nil {
 		return errors.Wrap(err, "Unable to listen on tcp address")
+	}
+
+	if m.tls {
+		req, err := TLSCreateReqCert(false, "*")
+		if err != nil {
+			return errors.Wrap(err, "Error creating the certificate request")
+		}
+
+		key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+		if err != nil {
+			return errors.Wrap(err, "Failed to create the private key")
+		}
+
+		cert, err := x509.CreateCertificate(rand.Reader, req, req, key.Public(), key)
+		if err != nil {
+			return errors.Wrap(err, "Failed to create the certificate")
+		}
+
+		config := &tls.Config{
+			Certificates: []tls.Certificate{
+				tls.Certificate{
+					Certificate: [][]byte{cert},
+					PrivateKey: key,
+				},
+			},
+		}
+
+		listener = tls.NewListener(listener, config)
+		cert_pem := &pem.Block{
+			Type: "CERTIFICATE",
+			Bytes: cert,
+		}
+		log.Printf("\nTLS Certificate created:\n%s\n", string(pem.EncodeToMemory(cert_pem)[:]))
 	}
 
 	log.Printf("Tcp-server listening on %s\n", listener.Addr().String())

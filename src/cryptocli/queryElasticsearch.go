@@ -8,7 +8,7 @@ import (
 	"github.com/tehmoon/errors"
 	"github.com/spf13/pflag"
 	"sync"
-	"github.com/olivere/elastic"
+	"github.com/olivere/elastic/v7"
 	"io"
 	"context"
 	"bytes"
