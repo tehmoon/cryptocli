@@ -26,6 +26,7 @@ type HTTPServer struct {
 	headers []string
 	showClientHeaders bool
 	showServerHeaders bool
+	text bool
 }
 
 var HTTPServerFormUploadPage = []byte(`
@@ -53,6 +54,7 @@ func (m *HTTPServer) SetFlagSet(fs *pflag.FlagSet, args []string) {
 	fs.StringVar(&m.user, "user", "", "Specify the required user for basic auth")
 	fs.StringVar(&m.password, "password", "", "Specify the required password for basic auth")
 	fs.StringVar(&m.redirect, "redirect-to", "", "Redirect the request to where the download can begin")
+	fs.BoolVar(&m.text, "text", false, "Set headers to show the content as text/plain rather than as an attachment")
 }
 
 func HTTPServerHandleResponse(m *HTTPServer, w http.ResponseWriter, req *http.Request, relay *HTTPServerRelayer) {
@@ -107,8 +109,20 @@ func HTTPServerHandleResponse(m *HTTPServer, w http.ResponseWriter, req *http.Re
 		return
 	}
 
-	w.Header().Add("Content-Type", "application/octet-stream")
-	w.Header().Add("Content-Disposition", "attachment;")
+	if w.Header().Get("Content-Type") == "" {
+		w.Header().Set("Content-Type", "application/octet-stream")
+	}
+
+	if w.Header().Get("Content-Disposition") == "" {
+		w.Header().Set("Content-Disposition", "attachment;")
+	}
+
+	// Override headers if --text is set
+	if m.text {
+		w.Header().Set("Content-Type", "text/plain")
+		w.Header().Set("Content-Disposition", "inline;")
+	}
+
 	if m.showServerHeaders {
 		ShowHTTPServerHeaders(w.Header())
 	}

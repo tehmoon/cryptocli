@@ -16,13 +16,9 @@ cd src/cryptocli
 rm -rf cryptocli-*
 rm build.log || true
 
-GOPATH=$(pwd)/.go
-GOPATH=${GOPATH} go get -v ./... || true
-GOPATH=${GOPATH} go get -u -v ./... || true
+go get -v ./...
 
-(cd "$GOPATH/src/github.com/olivere/elastic/"; git fetch -t -f; git reset --hard origin/release-branch.v7)
-
-GOPATH=${GOPATH} go build -o cryptocli-new .
+go build -o cryptocli-new .
 VERSION=$(git log @ -1 --format='%H %d')
 
 compile() {
@@ -48,14 +44,14 @@ compile() {
 		-- write-file --path "${DEST}.zip"
 }
 
-compile darwin amd64
+#compile darwin amd64
 compile linux amd64
-compile linux 386
-compile linux arm64
-compile windows amd64
-compile windows 386
-compile openbsd amd64
-compile netbsd amd64
+#compile linux 386
+#compile linux arm64
+#compile windows amd64
+#compile windows 386
+#compile openbsd amd64
+#compile netbsd amd64
 
 mv cryptocli-new cryptocli
 
